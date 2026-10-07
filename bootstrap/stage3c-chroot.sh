@@ -19,7 +19,7 @@ unpack ncurses "ncurses-$V_ncurses.tar.gz"
 ./configure --prefix=/usr --mandir=/usr/share/man --with-shared --without-debug --without-normal --with-cxx-shared \
     --enable-pc-files --with-pkg-config-libdir=/usr/lib/pkgconfig >/dev/null
 make >/dev/null; make DESTDIR="$PWD/dest" install >/dev/null
-install -m755 dest/usr/lib/libncursesw.so.$V_ncurses /usr/lib; rm dest/usr/lib/libncursesw.so.$V_ncurses
+install -m755 dest/usr/lib/libncursesw.so.6.5 /usr/lib; rm dest/usr/lib/libncursesw.so.6.5
 sed -e 's/^#if.*XOPEN.*$/#if 1/' -i dest/usr/include/curses.h
 cp -a dest/* /
 for lib in ncurses form panel menu; do ln -sf lib${lib}w.so /usr/lib/lib${lib}.so; ln -sf ${lib}w.pc /usr/lib/pkgconfig/${lib}.pc; done

@@ -3,9 +3,9 @@ step() { echo; echo "=== $* ($(date -u +%H:%M:%S)) ==="; }
 # GNU's main server is often slow from CI: try it briefly, then official mirrors (same files, checked by SHA-256)
 fetch() {
     local url=$1 out=$2 u
-    for u in "$url" "${url/https:\/\/ftp.gnu.org\/gnu\//https://mirrors.kernel.org/gnu/}" \
-             "${url/https:\/\/ftp.gnu.org\/gnu\//https://ftpmirror.gnu.org/}"; do
-        if curl -fsSL --retry 2 --connect-timeout 20 --max-time 900 -o "$out.part" "$u"; then mv "$out.part" "$out"; return 0; fi
+    for u in "${url/https:\/\/ftp.gnu.org\/gnu\//https://mirrors.kernel.org/gnu/}" \
+             "${url/https:\/\/ftp.gnu.org\/gnu\//https://ftpmirror.gnu.org/}" "$url"; do
+        if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$u"; then mv "$out.part" "$out"; return 0; fi
         echo "download failed: $u" >&2
     done
     rm -f "$out.part"; return 1
