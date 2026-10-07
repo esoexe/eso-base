@@ -1,4 +1,4 @@
-name: ESO Base - stage 3c (base system: perl, python, openssl, systemd, grub)
+name: "ESO Base - stage 3c (base system)"
 on:
   workflow_run:
     workflows: ["ESO Base - stage 3b (final glibc + toolchain)"]
