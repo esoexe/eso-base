@@ -31,6 +31,20 @@ install -m755 /sources/files/eso-mkinitramfs /usr/sbin/eso-mkinitramfs
 eso-mkinitramfs "$KV"
 
 step "system configuration"
+# service users for systemd (built with sysusers=false, so they must exist in /etc/passwd before first boot)
+addsys() {  # name uid comment
+    grep -q "^$1:" /etc/group  || echo "$1:x:$2:" >> /etc/group
+    grep -q "^$1:" /etc/passwd || echo "$1:x:$2:$2:$3:/:/usr/bin/false" >> /etc/passwd
+}
+addsys systemd-journal-gateway 73 "systemd Journal Gateway"
+addsys systemd-journal-remote  74 "systemd Journal Remote"
+addsys systemd-journal-upload  75 "systemd Journal Upload"
+addsys systemd-network         76 "systemd Network Management"
+addsys systemd-resolve         77 "systemd Resolver"
+addsys systemd-timesync        78 "systemd Time Synchronization"
+addsys systemd-coredump        79 "systemd Core Dumper"
+addsys systemd-oom             81 "systemd Userspace OOM Killer"
+pwconv 2>/dev/null || true; grpconv 2>/dev/null || true
 cat > /etc/os-release <<O
 NAME="ESO OS"
 PRETTY_NAME="ESO OS (ESO Base)"
