@@ -129,7 +129,7 @@ unpack gcc "gcc-$V_gcc.tar.xz"
 sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64
 mkdir build && cd build
 ../configure --prefix=/usr LD=ld --enable-languages=c,c++ --enable-default-pie --enable-default-ssp --enable-host-pie \
-    --disable-multilib --disable-bootstrap --disable-fixincludes --with-system-zlib >/dev/null
+    --disable-multilib --disable-libsanitizer --disable-bootstrap --disable-fixincludes --with-system-zlib >/dev/null
 make >/dev/null; make install >/dev/null
 ln -sfr /usr/bin/cpp /usr/lib/cpp
 mkdir -p /usr/lib/bfd-plugins
