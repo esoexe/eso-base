@@ -19,7 +19,7 @@ mount "${LOOP}p3" "$M"
 tar -C "$ESO" --exclude=./sources --exclude=./proc --exclude=./sys --exclude=./dev --exclude=./run -cpf - . | tar -C "$M" -xpf -
 mkdir -p "$M"/{proc,sys,dev,run,boot/efi}
 mount "${LOOP}p2" "$M/boot/efi"
-for d in dev proc sys; do mount --rbind /$d "$M/$d"; done
+for d in dev proc sys; do mount --rbind /$d "$M/$d"; mount --make-rslave "$M/$d"; done
 KV=$(ls "$M/usr/lib/modules" | head -1)
 chroot "$M" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
   grub-install --target=i386-pc --boot-directory=/boot '$LOOP' &&
@@ -31,7 +31,7 @@ insmod part_gpt
 insmod ext2
 search --no-floppy --label ESO-ROOT --set=root
 menuentry "ESO OS (ESO Base, kernel $KV)" {
-    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro quiet console=tty0 console=ttyS0,115200
+    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro loglevel=4 console=tty0 console=ttyS0,115200
     initrd /boot/initrd.img-$KV
 }
 G

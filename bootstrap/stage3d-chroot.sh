@@ -64,6 +64,7 @@ printf 'KEYMAP=us\n' > /etc/vconsole.conf
 cat > /etc/fstab <<F
 # file system  mount  type  options  dump  fsck
 LABEL=ESO-ROOT  /      ext4  defaults,noatime  1  1
+LABEL=ESO-ESP   /boot/efi  vfat  umask=0077,nofail  0  2
 F
 mkdir -p /etc/systemd/network
 printf '[Match]\nName=en* eth*\n\n[Network]\nDHCP=yes\n' > /etc/systemd/network/20-wired.network
