@@ -1,0 +1,82 @@
+name: "ESO Base - stage 3d (ESO Kernel, bootable image, boot test)"
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 3c (base system)"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  bootable:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the ESO stage 3c system (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage3c-x86_64&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no stage 3c artifact yet"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s3c.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s3c.zip && sha256sum -c eso-base-stage3c-x86_64.tar.zst.sha256
+          cp sources.lock bootstrap/sources.lock
+          sudo mkdir -p /mnt/eso
+          sudo tar --zstd -xpf eso-base-stage3c-x86_64.tar.zst -C /mnt/eso
+          rm -f s3c.zip eso-base-stage3c-x86_64.tar.zst
+          df -h /
+      - name: Build stage 3d inside the ESO chroot (ESO Kernel + initramfs + config)
+        run: sudo ESO=/mnt/eso bash bootstrap/stage3d.sh
+      - name: Make the bootable disk image
+        run: |
+          sudo apt-get install -y -qq dosfstools qemu-system-x86 ovmf zstd >/dev/null
+          sudo ESO=/mnt/eso bash bootstrap/make-image.sh eso-base.img
+          sudo chown "$USER" eso-base.img
+      - name: Boot test in QEMU (BIOS and UEFI) - must reach the login prompt
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+          ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
+          boot() {  # name extra-args
+            rm -f boot-$1.log
+            qemu-system-x86_64 $ACC -m 2048 -smp 2 -drive file=eso-base.img,format=raw,snapshot=on \
+                -display none -serial file:boot-$1.log -no-reboot $2 & q=$!
+            for i in $(seq 1 180); do
+              if grep -q "login:" boot-$1.log 2>/dev/null; then echo "$1: reached login after $((i*2)) s"; kill $q; return 0; fi
+              kill -0 $q 2>/dev/null || break; sleep 2
+            done
+            kill $q 2>/dev/null; echo "$1: no login prompt"; tail -50 boot-$1.log; return 1
+          }
+          ok=0
+          boot bios "" || ok=1
+          OVMF=$(ls /usr/share/ovmf/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd 2>/dev/null | head -1)
+          boot uefi "-bios $OVMF" || ok=1
+          tail -25 boot-bios.log
+          exit $ok
+      - name: Pack
+        if: always()
+        run: |
+          [ -f eso-base.img ] && zstd -q -T0 -10 eso-base.img -o eso-base-x86_64.img.zst && sha256sum eso-base-x86_64.img.zst | tee eso-base-x86_64.img.zst.sha256 || true
+          sudo tar --zstd -cpf eso-base-stage3d-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
+               --exclude=./sys --exclude=./dev --exclude=./run . && sudo chown "$USER" eso-base-stage3d-x86_64.tar.zst
+          sha256sum eso-base-stage3d-x86_64.tar.zst | tee eso-base-stage3d-x86_64.tar.zst.sha256
+          sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eso-base-stage3d-x86_64
+          path: |
+            eso-base-stage3d-x86_64.tar.zst
+            eso-base-stage3d-x86_64.tar.zst.sha256
+            eso-base-x86_64.img.zst
+            eso-base-x86_64.img.zst.sha256
+            boot-*.log
+            sources.lock
+          retention-days: 30
+          if-no-files-found: warn

@@ -1,0 +1,58 @@
+#!/bin/bash
+# eso-mkinitramfs KERNEL-VERSION [OUT]: ESO Base's own small initramfs (bash + kmod + udev + util-linux).
+# Loads the storage/filesystem drivers, finds root= (UUID=, LABEL=, PARTUUID= or /dev/…) and switches to it.
+set -euo pipefail
+KV=${1:?kernel version}
+OUT=${2:-/boot/initrd.img-$KV}
+W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+mkdir -p "$W"/{dev,proc,sys,run,newroot,etc,usr/{bin,sbin,lib/{modules,udev/rules.d,systemd}}} "$W/lib64"
+for d in bin sbin lib; do ln -s usr/$d "$W/$d"; done
+copy_bin() {
+    local f=$1 l
+    [[ -e $W$f ]] || install -D "$f" "$W$f"
+    for l in $(ldd "$f" 2>/dev/null | grep -o '/[^ ]*' | sort -u); do
+        [[ -e $W$l ]] || install -D "$l" "$W$l"
+        [[ -e $W$(readlink -f "$l") ]] || install -D "$(readlink -f "$l")" "$W$(readlink -f "$l")"
+    done
+}
+for b in bash sh mount umount mkdir ls cat sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck; do
+    p=$(command -v $b || true); [[ -n $p ]] && copy_bin "$(readlink -f "$p")" && { [[ $(readlink -f "$p") == "$p" ]] || cp -a "$p" "$W$p"; }
+done
+ln -sf kmod "$W/usr/bin/modprobe" 2>/dev/null || true
+cp -a /usr/lib/systemd/systemd-udevd "$W/usr/lib/systemd/" && copy_bin /usr/lib/systemd/systemd-udevd
+cp -a /usr/lib/udev/rules.d/{50-udev-default,60-persistent-storage,80-drivers}.rules "$W/usr/lib/udev/rules.d/" 2>/dev/null || true
+for h in ata_id scsi_id; do [[ -e /usr/lib/udev/$h ]] && copy_bin /usr/lib/udev/$h && cp -a /usr/lib/udev/$h "$W/usr/lib/udev/"; done
+M=/usr/lib/modules/$KV
+mkdir -p "$W$M"
+cp "$M"/modules.{order,builtin,builtin.modinfo} "$W$M/" 2>/dev/null || true
+# storage, filesystems, USB and virtual disks: enough to reach the root partition on any PC or VM
+( cd "$M" && find kernel/drivers/{ata,nvme,scsi,block,md,virtio,mmc,usb/host,usb/storage,hid,input/keyboard} \
+      kernel/fs/{ext4,jbd2,btrfs,xfs,fat,vfat,nls,isofs,overlayfs,squashfs} kernel/lib kernel/crypto \
+      kernel/drivers/firmware/efi -name '*.ko*' 2>/dev/null ) | while read -r m; do install -D -m644 "$M/$m" "$W$M/$m"; done
+depmod -b "$W" "$KV"
+cat > "$W/init" <<'INIT'
+#!/bin/bash
+PATH=/usr/bin:/usr/sbin
+mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev; mount -t tmpfs tmpfs /run
+root= ro=ro init=/usr/lib/systemd/systemd
+for a in $(cat /proc/cmdline); do
+    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; esac
+done
+/usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
+udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
+for m in ext4 btrfs xfs vfat; do modprobe -q $m; done
+dev=
+for i in $(seq 1 50); do
+    case $root in UUID=*|LABEL=*|PARTUUID=*) dev=$(findfs "$root" 2>/dev/null);; *) [[ -b $root ]] && dev=$root;; esac
+    [[ -n $dev ]] && break; sleep 0.2
+done
+if [[ -z $dev ]]; then echo "ESO: root device $root not found"; exec bash; fi
+mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; exec bash; }
+udevadm control --exit
+mount --move /run /newroot/run 2>/dev/null; mount --move /dev /newroot/dev 2>/dev/null
+umount /sys /proc
+exec switch_root /newroot "$init"
+INIT
+chmod 755 "$W/init"
+( cd "$W" && find . -print0 | cpio --null -o -H newc --quiet ) | zstd -q -19 -T0 > "$OUT"
+echo "$OUT: $(du -h "$OUT" | cut -f1)"
