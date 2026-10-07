@@ -12,16 +12,18 @@ fetch() {
 }
 # fetch_list LIST DIR: download + verify against sources.lock; writes VERSIONS (name=ver) to DIR/versions.env
 fetch_list() {
-    local list=$1 dir=$2 name ver url f sum pin
+    local list=$1 dir=$2 name ver url f fn sum pin
     mkdir -p "$dir"; touch "$HERE/sources.lock"
     while read -r name ver url; do
         [[ -z "$name" || "$name" == \#* ]] && continue
-        f=$dir/${url##*/}
+        fn=${url##*/}
+        if [[ $fn == download ]]; then fn=${url%/download}; fn=${fn##*/}; fi    # sourceforge .../file.tar.xz/download
+        f=$dir/$fn
         [[ -s "$f" ]] || fetch "$url" "$f"
         sum=$(sha256sum "$f" | cut -d' ' -f1)
-        pin=$(awk -v n="${url##*/}" '$2==n{print $1}' "$HERE/sources.lock")
-        if [[ -n "$pin" && "$pin" != "$sum" ]]; then echo "CHECKSUM MISMATCH: ${url##*/}"; exit 1; fi
-        if [[ -z "$pin" ]]; then echo "$sum  ${url##*/}" >> "$HERE/sources.lock"; fi
+        pin=$(awk -v n="$fn" '$2==n{print $1}' "$HERE/sources.lock")
+        if [[ -n "$pin" && "$pin" != "$sum" ]]; then echo "CHECKSUM MISMATCH: $fn"; exit 1; fi
+        if [[ -z "$pin" ]]; then echo "$sum  $fn" >> "$HERE/sources.lock"; fi
         echo "V_${name}=$ver" >> "$dir/versions.env"
     done < "$HERE/$list"
 }
