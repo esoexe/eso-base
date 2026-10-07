@@ -1,0 +1,71 @@
+name: "ESO Core - live ISO (first edition on ESO Base)"
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 3d (ESO Kernel, bootable image, boot test)"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  iso:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore ESO Base stage 3d (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage3d-x86_64&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no stage 3d artifact yet"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s3d.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s3d.zip eso-base-stage3d-x86_64.tar.zst eso-base-stage3d-x86_64.tar.zst.sha256
+          sha256sum -c eso-base-stage3d-x86_64.tar.zst.sha256
+          sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf eso-base-stage3d-x86_64.tar.zst -C /mnt/eso
+          rm -f s3d.zip eso-base-stage3d-x86_64.tar.zst
+          sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
+      - name: Host packing tools
+        run: sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 ovmf >/dev/null
+      - name: Build the ESO Core ISO
+        run: |
+          sudo ESO=/mnt/eso bash bootstrap/make-iso.sh eso-core-x86_64.iso
+          sudo chown "$USER" eso-core-x86_64.iso
+          sha256sum eso-core-x86_64.iso | tee eso-core-x86_64.iso.sha256
+      - name: Boot test (BIOS DVD, UEFI DVD, BIOS USB stick) - must reach the login prompt
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+          ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
+          OVMF=$(ls /usr/share/ovmf/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd 2>/dev/null | head -1)
+          boot() {  # name media-args
+            rm -f boot-$1.log
+            qemu-system-x86_64 $ACC -m 2048 -smp 2 $2 -display none -serial file:boot-$1.log -no-reboot & q=$!
+            for i in $(seq 1 180); do
+              if grep -q "login:" boot-$1.log 2>/dev/null; then echo "$1: login prompt after $((i*2)) s"; kill $q; return 0; fi
+              kill -0 $q 2>/dev/null || break; sleep 2
+            done
+            kill $q 2>/dev/null; echo "$1: NO login prompt"; tail -40 boot-$1.log; return 1
+          }
+          ok=0
+          boot bios-dvd "-cdrom eso-core-x86_64.iso" || ok=1
+          boot uefi-dvd "-bios $OVMF -cdrom eso-core-x86_64.iso" || ok=1
+          boot bios-usb "-drive file=eso-core-x86_64.iso,format=raw,if=none,id=u,snapshot=on -device qemu-xhci -device usb-storage,drive=u" || ok=1
+          grep -m3 "ESO\|Welcome" boot-bios-dvd.log || true
+          exit $ok
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eso-core-iso-x86_64
+          path: |
+            eso-core-x86_64.iso
+            eso-core-x86_64.iso.sha256
+            boot-*.log
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: warn

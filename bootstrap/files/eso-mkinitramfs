@@ -16,7 +16,7 @@ copy_bin() {
         [[ -e $W$(readlink -f "$l") ]] || install -D "$(readlink -f "$l")" "$W$(readlink -f "$l")"
     done
 }
-for b in bash sh mount umount mkdir ls cat sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck; do
+for b in bash sh mount umount mkdir ls cat sed sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck; do
     p=$(command -v $b || true); [[ -n $p ]] && copy_bin "$(readlink -f "$p")" && { [[ $(readlink -f "$p") == "$p" ]] || cp -a "$p" "$W$p"; } || true
 done
 ln -sf kmod "$W/usr/bin/modprobe" 2>/dev/null || true
@@ -26,29 +26,52 @@ for h in ata_id scsi_id; do [[ -e /usr/lib/udev/$h ]] && copy_bin /usr/lib/udev/
 M=/usr/lib/modules/$KV
 mkdir -p "$W$M"
 cp "$M"/modules.{order,builtin,builtin.modinfo} "$W$M/" 2>/dev/null || true
-# storage, filesystems, USB and virtual disks: enough to reach the root partition on any PC or VM
-( cd "$M" && find kernel/drivers/{ata,nvme,scsi,block,md,virtio,mmc,usb/host,usb/storage,hid,input/keyboard} \
-      kernel/fs/{ext4,jbd2,btrfs,xfs,fat,vfat,nls,isofs,overlayfs,squashfs} kernel/lib kernel/crypto \
-      kernel/drivers/firmware/efi -name '*.ko*' 2>/dev/null ) | while read -r m; do install -D -m644 "$M/$m" "$W$M/$m"; done
+# storage, filesystems, USB, CD/ISO and virtual disks: enough to reach the root (or the live medium) on any PC or VM.
+# Each module's dependencies are resolved with modprobe -D, wherever they live in the tree.
+( cd "$M" && find kernel/drivers/{ata,nvme,scsi,block,md,virtio,mmc,cdrom,usb/host,usb/storage,usb/core,usb/common,hid} \
+      kernel/drivers/{input/keyboard,hv,message/fusion,firmware/efi} \
+      kernel/fs/{ext4,jbd2,btrfs,xfs,fat,vfat,nls,isofs,overlayfs,squashfs} -name '*.ko*' 2>/dev/null ) |
+while read -r m; do
+    n=${m##*/}; n=${n%%.ko*}
+    modprobe -S "$KV" -D "$n" 2>/dev/null | sed -n 's/^insmod //p' | while read -r f; do
+        f=${f%% *}; [[ -e $W$f ]] || install -D -m644 "$f" "$W$f"
+    done || true
+done
 depmod -b "$W" "$KV"
 cat > "$W/init" <<'INIT'
 #!/bin/bash
 PATH=/usr/bin:/usr/sbin
 mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev; mount -t tmpfs tmpfs /run
-root= ro=ro init=/usr/lib/systemd/systemd
+root= ro=ro init=/usr/lib/systemd/systemd live=0
 for a in $(cat /proc/cmdline); do
-    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; esac
+    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; esac
 done
 /usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
 udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
 for m in ext4 btrfs xfs vfat; do modprobe -q $m; done
+if [[ $live == 1 ]]; then
+    # ESO live medium (ISO9660 label ESO_CORE): squashfs read-only + RAM overlay, nothing written to the disk
+    for m in isofs squashfs overlay loop sr_mod cdrom usb_storage uas; do modprobe -q $m; done
+    med=
+    for ((i = 0; i < 100; i++)); do med=$(findfs LABEL=ESO_CORE 2>/dev/null) && break; sleep 0.2; done
+    [[ -n $med ]] || { echo "ESO: live medium (label ESO_CORE) not found"; exec bash; }
+    mkdir -p /run/eso/{medium,sq,ov}
+    mount -o ro "$med" /run/eso/medium || { echo "ESO: cannot mount $med"; exec bash; }
+    sq=$(ls /run/eso/medium/live/*.squashfs 2>/dev/null | sed -n 1p)
+    mount -t squashfs -o loop,ro "$sq" /run/eso/sq || { echo "ESO: cannot mount $sq"; exec bash; }
+    mount -t tmpfs -o mode=755,size=75% tmpfs /run/eso/ov; mkdir -p /run/eso/ov/{upper,work}
+    mount -t overlay overlay -o lowerdir=/run/eso/sq,upperdir=/run/eso/ov/upper,workdir=/run/eso/ov/work /newroot ||
+        { echo "ESO: overlay failed"; exec bash; }
+    root=live
+fi
 dev=
-for ((i = 0; i < 50; i++)); do
+[[ $live == 1 ]] && dev=overlay
+for ((i = 0; i < 50 && live == 0; i++)); do
     case $root in UUID=*|LABEL=*|PARTUUID=*) dev=$(findfs "$root" 2>/dev/null);; *) [[ -b $root ]] && dev=$root;; esac
     [[ -n $dev ]] && break; sleep 0.2
 done
 if [[ -z $dev ]]; then echo "ESO: root device $root not found"; exec bash; fi
-mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; exec bash; }
+[[ $live == 1 ]] || mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; exec bash; }
 udevadm control --exit
 mount --move /run /newroot/run 2>/dev/null; mount --move /dev /newroot/dev 2>/dev/null
 umount /sys /proc
