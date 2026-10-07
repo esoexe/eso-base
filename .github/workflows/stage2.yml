@@ -1,0 +1,48 @@
+name: ESO Base - stage 2 (temporary system)
+on:
+  push:
+    branches: [main]
+    paths: ["bootstrap/stage2.sh", "bootstrap/sources-stage2.list", ".github/workflows/stage2.yml"]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  temp-system:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host bootstrap tools (only used to compile; nothing from the host ends up in ESO Base)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bison gawk texinfo m4 zstd
+      - name: Restore the ESO stage 1 toolchain (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage1-x86_64&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no stage 1 artifact yet: run stage 1 first"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s1.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s1.zip && sha256sum -c eso-base-stage1-x86_64.tar.zst.sha256
+          cp sources.lock bootstrap/sources.lock
+          sudo mkdir -p /mnt/eso && sudo chown "$USER" /mnt/eso
+          tar --zstd -xf eso-base-stage1-x86_64.tar.zst -C /mnt/eso
+          rm -f s1.zip eso-base-stage1-x86_64.tar.zst
+      - name: Build stage 2 (cross-compiled with ESO's own toolchain)
+        run: ESO=/mnt/eso bash bootstrap/stage2.sh
+      - name: Pack the temporary system
+        run: |
+          tar --zstd -cf eso-base-stage2-x86_64.tar.zst -C /mnt/eso --exclude=./sources .
+          sha256sum eso-base-stage2-x86_64.tar.zst | tee eso-base-stage2-x86_64.tar.zst.sha256
+          cp bootstrap/sources.lock sources.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-base-stage2-x86_64
+          path: |
+            eso-base-stage2-x86_64.tar.zst
+            eso-base-stage2-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 30
