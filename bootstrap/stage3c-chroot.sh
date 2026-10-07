@@ -75,7 +75,7 @@ unpack python "Python-$V_python.tar.xz"
 make >/dev/null 2>&1; make install >/dev/null 2>&1; done_ python
 python3 -m ensurepip --help >/dev/null 2>&1 || true
 # pip comes from Python's bundled wheel (no download)
-W=$(ls /usr/lib/python3*/ensurepip/_bundled/pip-*.whl 2>/dev/null | head -1)
+W=$(ls /usr/lib/python3*/ensurepip/_bundled/pip-*.whl 2>/dev/null | head -1 || true)
 if [[ -n "$W" ]]; then python3 "$W/pip" install --no-index --no-deps "$W" >/dev/null; fi
 printf '[global]\nroot-user-action = ignore\ndisable-pip-version-check = true\n' > /etc/pip.conf
 step "flit-core, packaging, wheel, setuptools"
@@ -163,4 +163,4 @@ find /usr/lib -type f -name '*.so*' ! -name '*dbg' | while read -r f; do
     if strip --strip-unneeded -o /tmp/strip.tmp "$f" 2>/dev/null; then chmod --reference="$f" /tmp/strip.tmp; mv -f /tmp/strip.tmp "$f"; fi
 done
 rm -rf /tmp/* /usr/share/doc/* /usr/share/info/*
-echo "ESO Base core system:"; systemctl --version | head -1; python3 --version; openssl version; du -sh --exclude=/sources / 2>/dev/null | tail -1
+echo "ESO Base core system:"; systemctl --version | head -1; python3 --version; openssl version; { du -shx --exclude=/sources / 2>/dev/null || true; } | tail -1

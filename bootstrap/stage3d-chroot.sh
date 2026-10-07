@@ -23,7 +23,6 @@ make -j"$(nproc)" bzImage modules >/dev/null
 KV=$(make -s kernelrelease)
 make INSTALL_MOD_STRIP=1 modules_install >/dev/null
 cp arch/x86/boot/bzImage "/boot/vmlinuz-$KV"; cp System.map "/boot/System.map-$KV"; cp .config "/boot/config-$KV"
-make headers_install INSTALL_HDR_PATH=/usr >/dev/null 2>&1 || true
 cd /sources; rm -rf linux
 echo "kernel $KV: $(du -sh /boot/vmlinuz-$KV | cut -f1), modules $(du -sh /usr/lib/modules/$KV | cut -f1)"
 

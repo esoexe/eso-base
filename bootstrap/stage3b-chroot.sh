@@ -138,6 +138,10 @@ mkdir -p /usr/share/gdb/auto-load/usr/lib; mv /usr/lib/*gdb.py /usr/share/gdb/au
 done_ gcc
 
 step "sanity check"
-echo 'int main(){return 0;}' > /tmp/t.c && cc /tmp/t.c -o /tmp/t -Wl,--verbose 2>/dev/null | grep -q 'succeeded.*crt1.o' && echo "crt1 OK"
-readelf -l /tmp/t | grep -q 'ld-linux-x86-64.so.2' && echo "dynamic linker OK"; /tmp/t && echo "runs OK"; rm -f /tmp/t /tmp/t.c
-gcc --version | head -1; ld --version | head -1; ldd --version | head -1
+echo 'int main(){return 0;}' > /tmp/t.c
+v=$(cc /tmp/t.c -o /tmp/t -Wl,--verbose 2>&1)
+[[ "$v" == *succeeded*crt1.o* ]] || { echo "SANITY: crt1.o not found"; exit 1; }
+[[ "$(readelf -l /tmp/t)" == *ld-linux-x86-64.so.2* ]] || { echo "SANITY: wrong dynamic linker"; exit 1; }
+/tmp/t || { echo "SANITY: test program does not run"; exit 1; }
+echo "toolchain sanity OK"; rm -f /tmp/t /tmp/t.c
+gcc --version | sed -n 1p; ld --version | sed -n 1p; ldd --version 2>&1 | sed -n 1p
