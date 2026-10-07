@@ -62,7 +62,7 @@ ln -sf ../lib/ld-linux-x86-64.so.2 "$ESO/lib64"
 ln -sf ../lib/ld-linux-x86-64.so.2 "$ESO/lib64/ld-lsb-x86-64.so.3"
 mkdir build && cd build
 echo "rootsbindir=/usr/sbin" > configparms
-../configure --prefix=/usr --host=$TGT --build="$(../scripts/config.guess)" --enable-kernel=5.4 \
+../configure --prefix=/usr --host=$TGT --build="$(../scripts/config.guess)" --enable-kernel=5.4 --disable-werror \
     --with-headers="$ESO/usr/include" --disable-nscd libc_cv_slibdir=/usr/lib >/dev/null
 make -j"$J" >/dev/null && make DESTDIR="$ESO" install >/dev/null
 sed '/RTLDLIST=/s@/usr@@g' -i "$ESO/usr/bin/ldd"
