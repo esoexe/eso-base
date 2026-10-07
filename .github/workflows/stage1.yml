@@ -1,0 +1,31 @@
+name: ESO Base - stage 1 (cross toolchain)
+on:
+  push:
+    branches: [main]
+    paths: ["build/stage1.sh", "build/sources.list", ".github/workflows/stage1.yml"]
+  workflow_dispatch:
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host bootstrap tools (only used to compile; nothing from the host ends up in ESO Base)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bison gawk texinfo m4 zstd
+      - name: Prepare /mnt/eso
+        run: sudo mkdir -p /mnt/eso && sudo chown "$USER" /mnt/eso
+      - name: Build stage 1
+        run: ESO=/mnt/eso bash build/stage1.sh
+      - name: Pack the toolchain
+        run: |
+          tar --zstd -cf eso-base-stage1-x86_64.tar.zst -C /mnt/eso tools usr lib64 etc
+          sha256sum eso-base-stage1-x86_64.tar.zst | tee eso-base-stage1-x86_64.tar.zst.sha256
+          cp build/sources.lock sources.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-base-stage1-x86_64
+          path: |
+            eso-base-stage1-x86_64.tar.zst
+            eso-base-stage1-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 30
