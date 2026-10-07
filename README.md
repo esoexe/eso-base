@@ -20,6 +20,6 @@ Packages are plain `.tar.zst` archives with a small `.ESOINFO` header, installed
 
 ## Layout
 
-- `build/stage1.sh` – the cross toolchain (LFS-style, target `x86_64-eso-linux-gnu`)
-- `build/sources.list` – exact upstream URLs; `build/sources.lock` – SHA-256 pinned after the first verified build
+- `bootstrap/stage1.sh` – the cross toolchain (LFS-style, target `x86_64-eso-linux-gnu`)
+- `bootstrap/sources.list` – exact upstream URLs; `bootstrap/sources.lock` – SHA-256 pinned after the first verified build
 - `.github/workflows/stage1.yml` – runs the stage on GitHub's free runners and publishes the toolchain artifact

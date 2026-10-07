@@ -1,8 +1,8 @@
-name: ESO Base - stages 1-2 (toolchain + temporary system)
+name: ESO Base - stage 1 (cross toolchain)
 on:
   push:
     branches: [main]
-    paths: ["build/stage1.sh", "build/stage2.sh", "build/sources.list", "build/sources-stage2.list", ".github/workflows/stage1.yml"]
+    paths: ["bootstrap/stage1.sh", "bootstrap/sources.list", ".github/workflows/stage1.yml"]
   workflow_dispatch:
 jobs:
   toolchain:
@@ -15,32 +15,17 @@ jobs:
       - name: Prepare /mnt/eso
         run: sudo mkdir -p /mnt/eso && sudo chown "$USER" /mnt/eso
       - name: Build stage 1
-        run: ESO=/mnt/eso bash build/stage1.sh
+        run: ESO=/mnt/eso bash bootstrap/stage1.sh
       - name: Pack the toolchain
         run: |
           tar --zstd -cf eso-base-stage1-x86_64.tar.zst -C /mnt/eso tools usr lib64 etc
           sha256sum eso-base-stage1-x86_64.tar.zst | tee eso-base-stage1-x86_64.tar.zst.sha256
-          cp build/sources.lock sources.lock
+          cp bootstrap/sources.lock sources.lock
       - uses: actions/upload-artifact@v4
         with:
           name: eso-base-stage1-x86_64
           path: |
             eso-base-stage1-x86_64.tar.zst
             eso-base-stage1-x86_64.tar.zst.sha256
-            sources.lock
-          retention-days: 30
-      - name: Build stage 2 (temporary system, cross-compiled with ESO's toolchain)
-        run: ESO=/mnt/eso bash build/stage2.sh
-      - name: Pack the temporary system
-        run: |
-          tar --zstd -cf eso-base-stage2-x86_64.tar.zst -C /mnt/eso --exclude=./sources .
-          sha256sum eso-base-stage2-x86_64.tar.zst | tee eso-base-stage2-x86_64.tar.zst.sha256
-          cp build/sources.lock sources.lock
-      - uses: actions/upload-artifact@v4
-        with:
-          name: eso-base-stage2-x86_64
-          path: |
-            eso-base-stage2-x86_64.tar.zst
-            eso-base-stage2-x86_64.tar.zst.sha256
             sources.lock
           retention-days: 30
