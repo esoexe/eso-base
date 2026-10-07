@@ -1,0 +1,49 @@
+name: ESO Base - stage 3a (chroot, self-hosting tools)
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 2 (temporary system)"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  chroot-tools:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the ESO stage 2 system (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage2-x86_64&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no stage 2 artifact yet"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s2.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s2.zip && sha256sum -c eso-base-stage2-x86_64.tar.zst.sha256
+          cp sources.lock bootstrap/sources.lock
+          sudo mkdir -p /mnt/eso
+          sudo tar --zstd -xpf eso-base-stage2-x86_64.tar.zst -C /mnt/eso
+          rm -f s2.zip eso-base-stage2-x86_64.tar.zst
+      - name: Build stage 3a inside the ESO chroot
+        run: sudo ESO=/mnt/eso bash bootstrap/stage3.sh
+      - name: Pack
+        run: |
+          sudo tar --zstd -cpf eso-base-stage3a-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
+               --exclude=./sys --exclude=./dev --exclude=./run .
+          sudo chown "$USER" eso-base-stage3a-x86_64.tar.zst
+          sha256sum eso-base-stage3a-x86_64.tar.zst | tee eso-base-stage3a-x86_64.tar.zst.sha256
+          sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-base-stage3a-x86_64
+          path: |
+            eso-base-stage3a-x86_64.tar.zst
+            eso-base-stage3a-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 30
