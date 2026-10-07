@@ -7,6 +7,7 @@ OUT=${2:-/boot/initrd.img-$KV}
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"/{dev,proc,sys,run,newroot,etc,usr/{bin,sbin,lib/{modules,udev/rules.d,systemd}}} "$W/lib64"
 for d in bin sbin lib; do ln -s usr/$d "$W/$d"; done
+mknod -m 600 "$W/dev/console" c 5 1; mknod -m 666 "$W/dev/null" c 1 3
 copy_bin() {
     local f=$1 l
     [[ -e $W$f ]] || install -D "$f" "$W$f"
@@ -16,12 +17,12 @@ copy_bin() {
     done
 }
 for b in bash sh mount umount mkdir ls cat sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck; do
-    p=$(command -v $b || true); [[ -n $p ]] && copy_bin "$(readlink -f "$p")" && { [[ $(readlink -f "$p") == "$p" ]] || cp -a "$p" "$W$p"; }
+    p=$(command -v $b || true); [[ -n $p ]] && copy_bin "$(readlink -f "$p")" && { [[ $(readlink -f "$p") == "$p" ]] || cp -a "$p" "$W$p"; } || true
 done
 ln -sf kmod "$W/usr/bin/modprobe" 2>/dev/null || true
 cp -a /usr/lib/systemd/systemd-udevd "$W/usr/lib/systemd/" && copy_bin /usr/lib/systemd/systemd-udevd
 cp -a /usr/lib/udev/rules.d/{50-udev-default,60-persistent-storage,80-drivers}.rules "$W/usr/lib/udev/rules.d/" 2>/dev/null || true
-for h in ata_id scsi_id; do [[ -e /usr/lib/udev/$h ]] && copy_bin /usr/lib/udev/$h && cp -a /usr/lib/udev/$h "$W/usr/lib/udev/"; done
+for h in ata_id scsi_id; do [[ -e /usr/lib/udev/$h ]] && copy_bin /usr/lib/udev/$h && cp -a /usr/lib/udev/$h "$W/usr/lib/udev/" || true; done
 M=/usr/lib/modules/$KV
 mkdir -p "$W$M"
 cp "$M"/modules.{order,builtin,builtin.modinfo} "$W$M/" 2>/dev/null || true
@@ -42,7 +43,7 @@ done
 udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
 for m in ext4 btrfs xfs vfat; do modprobe -q $m; done
 dev=
-for i in $(seq 1 50); do
+for ((i = 0; i < 50; i++)); do
     case $root in UUID=*|LABEL=*|PARTUUID=*) dev=$(findfs "$root" 2>/dev/null);; *) [[ -b $root ]] && dev=$root;; esac
     [[ -n $dev ]] && break; sleep 0.2
 done
