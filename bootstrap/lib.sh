@@ -18,6 +18,8 @@ fetch_list() {
         [[ -z "$name" || "$name" == \#* ]] && continue
         fn=${url##*/}
         if [[ $fn == download ]]; then fn=${url%/download}; fn=${fn##*/}; fi    # sourceforge .../file.tar.xz/download
+        if [[ $fn == *\?* ]]; then fn="$name-$ver.tar.gz"; fi                     # API archives: archive.tar.gz?sha=TAG
+        if [[ $fn == [0-9v]* ]]; then fn="$name-$fn"; fi                          # tag archives: 0.9.1.tar.gz
         f=$dir/$fn
         [[ -s "$f" ]] || fetch "$url" "$f"
         sum=$(sha256sum "$f" | cut -d' ' -f1)
