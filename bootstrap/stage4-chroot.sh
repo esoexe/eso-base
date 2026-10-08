@@ -1,7 +1,7 @@
 #!/bin/bash
 # ESO Base stage 4, INSIDE the chroot: graphics.  X11 client libraries, Wayland, fonts, libdrm, Mesa (OpenGL/EGL/GBM),
-# libinput, seatd and Xwayland, all from upstream sources.  Mesa pass 1 has no LLVM: Intel (iris/crocus/i915),
-# NVIDIA open (nouveau), virtual machines (virgl, VMware/VirtualBox svga) and softpipe.  Stage 4b adds LLVM for AMD
+# libinput, seatd and Xwayland, all from upstream sources.  Mesa pass 1 has no LLVM: older Intel (crocus/i915),
+# NVIDIA open (nouveau), virtual machines (virgl, VMware/VirtualBox svga) and softpipe.  Stage 4b adds LLVM+Clang (iris needs CLC), AMD
 # (radeonsi) and the fast software renderer (llvmpipe).
 set -euo pipefail
 . /sources/versions.env
@@ -85,12 +85,12 @@ ac xkbcomp
 # ── Mesa ──
 pyw mako mako
 pyw pyyaml PyYAML
-step "Mesa $V_mesa (pass 1: Intel, nouveau, virgl, svga, softpipe)"
+step "Mesa $V_mesa (pass 1, no LLVM: crocus, i915, nouveau, virgl, svga, softpipe)"
 unpack mesa "mesa-$V_mesa.tar.xz"
 quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload \
-    -Dplatforms=x11,wayland -Dgallium-drivers=iris,crocus,i915,nouveau,virgl,svga,softpipe -Dvulkan-drivers= \
+    -Dplatforms=x11,wayland -Dgallium-drivers=crocus,i915,nouveau,virgl,svga,softpipe -Dvulkan-drivers= \
     -Dllvm=disabled -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled -Dglvnd=disabled \
-    -Dvalgrind=disabled -Dlibunwind=disabled -Dintel-rt=disabled -Dvideo-codecs= -Dshared-glapi=enabled
+    -Dvalgrind=disabled -Dlibunwind=disabled -Dintel-rt=disabled -Dvideo-codecs=
 quiet ninja -C build; quiet ninja -C build install; done_ mesa
 
 ms libepoxy -Ddocs=false -Dtests=false
