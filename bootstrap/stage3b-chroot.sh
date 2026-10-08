@@ -140,7 +140,7 @@ done_ gcc
 step "sanity check"
 echo 'int main(){return 0;}' > /tmp/t.c
 v=$(cc /tmp/t.c -o /tmp/t -Wl,--verbose 2>&1)
-[[ "$v" == *succeeded*crt1.o* ]] || { echo "SANITY: crt1.o not found"; exit 1; }
+[[ "$v" == *"crt1.o succeeded"* ]] || { echo "SANITY: crt1.o not found"; exit 1; }
 [[ "$(readelf -l /tmp/t)" == *ld-linux-x86-64.so.2* ]] || { echo "SANITY: wrong dynamic linker"; exit 1; }
 /tmp/t || { echo "SANITY: test program does not run"; exit 1; }
 echo "toolchain sanity OK"; rm -f /tmp/t /tmp/t.c
