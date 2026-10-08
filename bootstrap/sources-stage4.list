@@ -31,6 +31,7 @@ fontconfig 2.16.0 https://www.freedesktop.org/software/fontconfig/release/fontco
 pixman 0.46.4 https://cairographics.org/releases/pixman-0.46.4.tar.gz
 libpciaccess 0.18.1 https://xorg.freedesktop.org/releases/individual/lib/libpciaccess-0.18.1.tar.xz
 libdrm 2.4.125 https://dri.freedesktop.org/libdrm/libdrm-2.4.125.tar.xz
+libxml2 2.14.5 https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.5.tar.xz
 wayland 1.26.0 https://gitlab.freedesktop.org/-/project/121/uploads/5f5d2e19a230e8b8250d9a7c2f280846/wayland-1.26.0.tar.xz
 waylandprotocols 1.49 https://gitlab.freedesktop.org/-/project/2891/uploads/7ed597f0cad076a17fe36f8860596f8c/wayland-protocols-1.49.tar.xz
 libxkbcommon 1.11.0 https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.11.0.tar.gz

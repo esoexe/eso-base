@@ -72,6 +72,7 @@ fc-cache -f >/dev/null 2>&1 || true
 # ── kernel graphics + Wayland ──
 ms libpciaccess
 ms libdrm -Dudev=true -Dvalgrind=disabled -Dtests=false -Dman-pages=disabled -Dcairo-tests=disabled
+ac libxml2 --without-python --with-history --docdir=/usr/share/doc/libxml2
 ms wayland -Ddocumentation=false -Dtests=false
 ms waylandprotocols -Dtests=false
 step "libxkbcommon"; unpack libxkbcommon "$(basename "$(src libxkbcommon)")"
