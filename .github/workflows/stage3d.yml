@@ -4,6 +4,11 @@ on:
     workflows: ["ESO Base - stage 3c (base system)"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      resume:
+        description: "Reuse the ESO Kernel from the last stage 3d tree (skip the 1 h kernel build)"
+        type: boolean
+        default: false
 permissions:
   actions: write
   contents: read
@@ -14,22 +19,25 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
-      - name: Restore the ESO stage 3c system (newest artifact)
+      - name: Restore the ESO stage 3c system (or the last stage 3d tree when resuming)
         env:
           GH_TOKEN: ${{ github.token }}
+          RESUME: ${{ inputs.resume && 'yes' || 'no' }}
         run: |
           set -e
+          if [ "$RESUME" = yes ]; then N=eso-base-stage3d-x86_64; else N=eso-base-stage3c-x86_64; fi
           id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage3c-x86_64&per_page=1" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
                | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
-          [ -n "$id" ] || { echo "no stage 3c artifact yet"; exit 1; }
+          [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s3c.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
-          unzip -q s3c.zip && sha256sum -c eso-base-stage3c-x86_64.tar.zst.sha256
+          unzip -q s3c.zip $N.tar.zst $N.tar.zst.sha256 sources.lock && sha256sum -c $N.tar.zst.sha256
           cp sources.lock bootstrap/sources.lock
           sudo mkdir -p /mnt/eso
-          sudo tar --zstd -xpf eso-base-stage3c-x86_64.tar.zst -C /mnt/eso
-          rm -f s3c.zip eso-base-stage3c-x86_64.tar.zst
+          sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
+          rm -f s3c.zip $N.tar.zst $N.tar.zst.sha256
+          echo "restored $N"
           df -h /
       - name: Build stage 3d inside the ESO chroot (ESO Kernel + initramfs + config)
         run: sudo ESO=/mnt/eso bash bootstrap/stage3d.sh

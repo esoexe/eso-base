@@ -5,34 +5,43 @@ set -euo pipefail
 step() { echo; echo "=== $* ($(date -u +%H:%M:%S)) ==="; }
 unpack() { rm -rf "/sources/$1"; mkdir -p "/sources/$1"; tar -xf "/sources/$2" -C "/sources/$1" --strip-components=1; cd "/sources/$1"; }
 
-step "cpio $V_cpio"; unpack cpio "cpio-$V_cpio.tar.bz2"
-./configure --prefix=/usr --enable-mt --with-rmt=/usr/libexec/rmt >/dev/null 2>&1 \
-    && make >/dev/null 2>&1 && make install >/dev/null; cd /sources; rm -rf cpio
-
-step "ESO Kernel $V_linux (BORE $V_bore, 1000 Hz)"
-unpack linux "linux-$V_linux.tar.xz"
-patch -p1 -s < "/sources/$(ls /sources | grep -m1 'bore.*\.patch$')"
-cp /sources/kernel/base.config .config
-scripts/kconfig/merge_config.sh -m .config /sources/kernel/eso.config >/dev/null
-make -s olddefconfig
-# modules are compressed; depmod/modprobe must be able to read them, otherwise ship them uncompressed
-if ! kmod --version | grep -q '+XZ'; then
-    echo "kmod has no XZ support: modules stay uncompressed"
-    scripts/config --disable MODULE_COMPRESS_XZ --disable MODULE_COMPRESS_ZSTD --disable MODULE_COMPRESS_GZIP \
-                   --disable MODULE_COMPRESS
-    make -s olddefconfig
+if ! command -v cpio >/dev/null; then
+    step "cpio $V_cpio"; unpack cpio "cpio-$V_cpio.tar.bz2"
+    # cpio 2.15 predates C23 (GCC 15 default): old-style xstat() prototypes -> build as C17
+    ./configure --prefix=/usr --enable-mt --with-rmt=/usr/libexec/rmt CFLAGS="-std=gnu17 -O2" >/dev/null
+    make >/dev/null; make install >/dev/null; cd /sources; rm -rf cpio
 fi
-kmod --version | tail -1
-for o in SCHED_BORE HZ_1000 MODULE_SIG_ALL DEBUG_INFO_NONE DEVTMPFS; do
-    grep -q "^CONFIG_$o=[ym]" .config || { echo "config check failed: $o"; exit 1; }
-done
-export KBUILD_BUILD_USER=eso KBUILD_BUILD_HOST=esoos.dpdns.org KBUILD_BUILD_TIMESTAMP="ESO Kernel"
-make -j"$(nproc)" bzImage modules >/dev/null
-KV=$(make -s kernelrelease)
-make INSTALL_MOD_STRIP=1 modules_install >/dev/null
-cp arch/x86/boot/bzImage "/boot/vmlinuz-$KV"; cp System.map "/boot/System.map-$KV"; cp .config "/boot/config-$KV"
-cd /sources; rm -rf linux
-echo "kernel $KV: $(du -sh /boot/vmlinuz-$KV | cut -f1), modules $(du -sh /usr/lib/modules/$KV | cut -f1)"
+cpio --version | sed -n 1p
+
+KV=$(ls /usr/lib/modules 2>/dev/null | grep -m1 -- '-eso$' || true)
+if [[ -n $KV && -f /boot/vmlinuz-$KV ]]; then
+    echo "ESO Kernel $KV is already built (resumed run): skipping the kernel build"
+else
+    step "ESO Kernel $V_linux (BORE $V_bore, 1000 Hz)"
+    unpack linux "linux-$V_linux.tar.xz"
+    patch -p1 -s < "/sources/$(ls /sources | grep -m1 'bore.*\.patch$')"
+    cp /sources/kernel/base.config .config
+    scripts/kconfig/merge_config.sh -m .config /sources/kernel/eso.config >/dev/null
+    make -s olddefconfig
+    # modules are compressed; depmod/modprobe must be able to read them, otherwise ship them uncompressed
+    if ! kmod --version | grep -q '+XZ'; then
+        echo "kmod has no XZ support: modules stay uncompressed"
+        scripts/config --disable MODULE_COMPRESS_XZ --disable MODULE_COMPRESS_ZSTD --disable MODULE_COMPRESS_GZIP \
+                       --disable MODULE_COMPRESS
+        make -s olddefconfig
+    fi
+    kmod --version | tail -1
+    for o in SCHED_BORE HZ_1000 MODULE_SIG_ALL DEBUG_INFO_NONE DEVTMPFS; do
+        grep -q "^CONFIG_$o=[ym]" .config || { echo "config check failed: $o"; exit 1; }
+    done
+    export KBUILD_BUILD_USER=eso KBUILD_BUILD_HOST=esoos.dpdns.org KBUILD_BUILD_TIMESTAMP="$(date -u +%Y-%m-%d)"
+    make -j"$(nproc)" bzImage modules >/dev/null
+    KV=$(make -s kernelrelease)
+    make INSTALL_MOD_STRIP=1 modules_install >/dev/null
+    cp arch/x86/boot/bzImage "/boot/vmlinuz-$KV"; cp System.map "/boot/System.map-$KV"; cp .config "/boot/config-$KV"
+    cd /sources; rm -rf linux
+    echo "kernel $KV: $(du -sh /boot/vmlinuz-$KV | cut -f1), modules $(du -sh /usr/lib/modules/$KV | cut -f1)"
+fi
 
 step "ESO initramfs"
 install -m755 /sources/files/eso-mkinitramfs /usr/sbin/eso-mkinitramfs

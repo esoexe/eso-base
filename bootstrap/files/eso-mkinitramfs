@@ -7,7 +7,7 @@ OUT=${2:-/boot/initrd.img-$KV}
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 mkdir -p "$W"/{dev,proc,sys,run,newroot,etc,usr/{bin,sbin,lib/{modules,udev/rules.d,systemd}}} "$W/lib64"
 for d in bin sbin lib; do ln -s usr/$d "$W/$d"; done
-mknod -m 600 "$W/dev/console" c 5 1; mknod -m 666 "$W/dev/null" c 1 3
+mknod -m 600 "$W/dev/console" c 5 1 2>/dev/null || true; mknod -m 666 "$W/dev/null" c 1 3 2>/dev/null || true
 copy_bin() {
     local f=$1 l
     [[ -e $W$f ]] || install -D "$f" "$W$f"
@@ -30,7 +30,7 @@ cp "$M"/modules.{order,builtin,builtin.modinfo} "$W$M/" 2>/dev/null || true
 # Each module's dependencies are resolved with modprobe -D, wherever they live in the tree.
 ( cd "$M" && find kernel/drivers/{ata,nvme,scsi,block,md,virtio,mmc,cdrom,usb/host,usb/storage,usb/core,usb/common,hid} \
       kernel/drivers/{input/keyboard,hv,message/fusion,firmware/efi} \
-      kernel/fs/{ext4,jbd2,btrfs,xfs,fat,vfat,nls,isofs,overlayfs,squashfs} -name '*.ko*' 2>/dev/null ) |
+      kernel/fs/{ext4,jbd2,btrfs,xfs,fat,vfat,nls,isofs,overlayfs,squashfs} -name '*.ko*' 2>/dev/null || true ) |
 while read -r m; do
     n=${m##*/}; n=${n%%.ko*}
     modprobe -S "$KV" -D "$n" 2>/dev/null | sed -n 's/^insmod //p' | while read -r f; do
@@ -48,7 +48,10 @@ for a in $(cat /proc/cmdline); do
 done
 /usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
 udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
-for m in ext4 btrfs xfs vfat; do modprobe -q $m; done
+# safety net: the usual disk controllers even if a modalias event was missed (cheap, no-ops when absent)
+for m in virtio_pci virtio_blk virtio_scsi ahci ata_piix nvme sd_mod sr_mod mmc_block sdhci_pci xhci_pci ehci_pci \
+         usb_storage uas hv_storvsc vmw_pvscsi mptspi ext4 btrfs xfs vfat; do modprobe -q $m 2>/dev/null; done
+udevadm settle --timeout=10
 if [[ $live == 1 ]]; then
     # ESO live medium (ISO9660 label ESO_CORE): squashfs read-only + RAM overlay, nothing written to the disk
     for m in isofs squashfs overlay loop sr_mod cdrom usb_storage uas; do modprobe -q $m; done
@@ -70,7 +73,11 @@ for ((i = 0; i < 50 && live == 0; i++)); do
     case $root in UUID=*|LABEL=*|PARTUUID=*) dev=$(findfs "$root" 2>/dev/null);; *) [[ -b $root ]] && dev=$root;; esac
     [[ -n $dev ]] && break; sleep 0.2
 done
-if [[ -z $dev ]]; then echo "ESO: root device $root not found"; exec bash; fi
+if [[ -z $dev ]]; then
+    echo "ESO: root device $root not found"; echo "partitions:"; cat /proc/partitions
+    echo "modules loaded: $(wc -l < /proc/modules)"; blkid 2>&1 | head -10
+    exec bash
+fi
 [[ $live == 1 ]] || mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; exec bash; }
 udevadm control --exit
 mount --move /run /newroot/run 2>/dev/null; mount --move /dev /newroot/dev 2>/dev/null
