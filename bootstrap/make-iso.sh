@@ -4,7 +4,12 @@
 # build (kernel, initramfs, GRUB, systemd ...); the host only packs it (xorriso, mksquashfs, mtools).
 set -euo pipefail
 ESO=${ESO:-/mnt/eso}; ISO=${1:-eso-core-x86_64.iso}; LABEL=ESO_CORE
-W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+W=$(mktemp -d)
+# kernel file systems for the chroot steps (eso-mkinitramfs and grub-mkimage need /dev/null, /proc ...)
+mnt() { mkdir -p "$ESO"/{dev,proc,sys,run}; mount --bind /dev "$ESO/dev"; mount -t proc proc "$ESO/proc"
+        mount -t sysfs sysfs "$ESO/sys"; mount -t tmpfs tmpfs "$ESO/run"; }
+umnt() { local m; for m in dev/pts dev proc sys run; do if mountpoint -q "$ESO/$m"; then umount -l "$ESO/$m"; fi; done; }
+trap 'umnt; rm -rf "$W"' EXIT
 KV=$(ls "$ESO/usr/lib/modules" | sed -n 1p)
 [[ -f $ESO/boot/vmlinuz-$KV && -f $ESO/boot/initrd.img-$KV ]] || { echo "kernel/initramfs $KV missing"; exit 1; }
 mkdir -p "$W"/iso/{live,boot/grub}
@@ -20,7 +25,15 @@ cat > "$ESO/etc/issue" <<'I'
 
 I
 # initramfs with live support (eso-mkinitramfs knows eso.live)
+mnt
 chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "eso-mkinitramfs '$KV' /boot/initrd.img-$KV" >/dev/null
+# the initramfs must contain /init and a shell, or the kernel panics with "No working init found"
+chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
+  f=/boot/initrd.img-$KV; d=\$(mktemp -d); cd \$d
+  { zstd -dc \$f 2>/dev/null || xz -dc \$f 2>/dev/null || gzip -dc \$f 2>/dev/null || cat \$f; } | cpio -id --quiet 2>/dev/null
+  ok=1; for x in init bin/sh; do [ -e \$x ] || { echo \"initramfs is missing /\$x\"; ok=0; }; done
+  echo \"initramfs: \$(find . | wc -l) files\"; cd /; rm -rf \$d; [ \$ok = 1 ]"
+umnt
 cp "$ESO/boot/vmlinuz-$KV" "$W/iso/boot/vmlinuz"; cp "$ESO/boot/initrd.img-$KV" "$W/iso/boot/initrd.img"
 
 # --- root filesystem ---
@@ -35,9 +48,11 @@ set prefix=(\$root)/boot/grub
 E
 MODS="iso9660 part_msdos part_gpt fat ext2 normal search search_label linux configfile echo ls cat test true all_video gzio"
 cp "$W/early.cfg" "$ESO/tmp/early.cfg"
+mnt
 chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
   grub-mkimage -O i386-pc-eltorito -c /tmp/early.cfg -p /boot/grub -o /tmp/eltorito.img biosdisk $MODS &&
   grub-mkimage -O x86_64-efi       -c /tmp/early.cfg -p /boot/grub -o /tmp/bootx64.efi $MODS efi_gop efi_uga"
+umnt
 mv "$ESO/tmp/eltorito.img" "$W/iso/boot/grub/"; mv "$ESO/tmp/bootx64.efi" "$W/"; rm -f "$ESO/tmp/early.cfg"
 cp -r "$ESO/usr/lib/grub/i386-pc" "$ESO/usr/lib/grub/x86_64-efi" "$W/iso/boot/grub/"
 rm -f "$W"/iso/boot/grub/*/*.{image,module,exec} 2>/dev/null || true
