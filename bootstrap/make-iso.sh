@@ -49,11 +49,11 @@ set timeout=3
 set default=0
 insmod all_video
 menuentry "ESO Core (live)" {
-    linux /boot/vmlinuz eso.live loglevel=4 console=ttyS0,115200 console=tty0
+    linux /boot/vmlinuz eso.live loglevel=3 console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
 menuentry "ESO Core (live, safe graphics)" {
-    linux /boot/vmlinuz eso.live loglevel=4 nomodeset console=ttyS0,115200 console=tty0
+    linux /boot/vmlinuz eso.live loglevel=3 nomodeset console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
 G

@@ -36,7 +36,7 @@ insmod part_gpt
 insmod ext2
 search --no-floppy --label ESO-ROOT --set=root
 menuentry "ESO OS (ESO Base, kernel $KV)" {
-    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro loglevel=4 console=tty0 console=ttyS0,115200
+    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro loglevel=3 console=tty0 console=ttyS0,115200
     initrd /boot/initrd.img-$KV
 }
 G

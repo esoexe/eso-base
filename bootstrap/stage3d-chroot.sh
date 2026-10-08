@@ -48,6 +48,10 @@ install -m755 /sources/files/eso-mkinitramfs /usr/sbin/eso-mkinitramfs
 eso-mkinitramfs "$KV"
 
 step "system configuration"
+# no PC-speaker beeps (and no "pcspkr already registered" race on the console); quiet kernel console
+mkdir -p /etc/modprobe.d /etc/sysctl.d
+printf 'blacklist pcspkr\nblacklist snd_pcsp\n' > /etc/modprobe.d/eso-nobeep.conf
+printf 'kernel.printk = 3 3 3 3\n' > /etc/sysctl.d/10-eso-console.conf
 # service users for systemd (built with sysusers=false, so they must exist in /etc/passwd before first boot)
 addsys() {  # name uid comment
     grep -q "^$1:" /etc/group  || echo "$1:x:$2:" >> /etc/group
