@@ -91,7 +91,7 @@ pywheel markupsafe "markupsafe-$V_markupsafe.tar.gz" markupsafe
 pywheel jinja2 "jinja2-$V_jinja2.tar.gz" jinja2
 
 step "kmod $V_kmod"; unpack kmod "kmod-$V_kmod.tar.xz"
-mkdir build && cd build && meson setup --prefix=/usr .. --buildtype=release -D manpages=false > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
+mkdir build && cd build && meson setup --prefix=/usr .. --buildtype=release -D manpages=false -D xz=enabled -D zstd=enabled -D zlib=enabled -D openssl=enabled > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
 nj; nj install; done_ kmod
 step "coreutils"; unpack coreutils "coreutils-$V_coreutils.tar.xz"
 FORCE_UNSAFE_CONFIGURE=1 cfg --enable-no-install-program=kill,uptime; mv /usr/bin/chroot /usr/sbin 2>/dev/null || true; done_ coreutils

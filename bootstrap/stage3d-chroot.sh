@@ -15,6 +15,14 @@ patch -p1 -s < "/sources/$(ls /sources | grep -m1 'bore.*\.patch$')"
 cp /sources/kernel/base.config .config
 scripts/kconfig/merge_config.sh -m .config /sources/kernel/eso.config >/dev/null
 make -s olddefconfig
+# modules are compressed; depmod/modprobe must be able to read them, otherwise ship them uncompressed
+if ! kmod --version | grep -q '+XZ'; then
+    echo "kmod has no XZ support: modules stay uncompressed"
+    scripts/config --disable MODULE_COMPRESS_XZ --disable MODULE_COMPRESS_ZSTD --disable MODULE_COMPRESS_GZIP \
+                   --disable MODULE_COMPRESS
+    make -s olddefconfig
+fi
+kmod --version | tail -1
 for o in SCHED_BORE HZ_1000 MODULE_SIG_ALL DEBUG_INFO_NONE DEVTMPFS; do
     grep -q "^CONFIG_$o=[ym]" .config || { echo "config check failed: $o"; exit 1; }
 done
