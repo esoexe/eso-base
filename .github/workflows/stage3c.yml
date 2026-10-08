@@ -4,6 +4,11 @@ on:
     workflows: ["ESO Base - stage 3b (final glibc + toolchain)"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      resume:
+        description: "Resume at systemd from the part-1 checkpoint"
+        type: boolean
+        default: false
 permissions:
   actions: read
   contents: read
@@ -14,24 +19,50 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
-      - name: Restore the ESO stage 3b system (newest artifact)
+      - name: Restore the ESO stage 3b system, or the part-1 checkpoint when resuming
         env:
           GH_TOKEN: ${{ github.token }}
+          RESUME: ${{ inputs.resume && 'yes' || 'no' }}
         run: |
           set -e
+          if [ "$RESUME" = yes ]; then N=eso-base-stage3c-part1-x86_64; else N=eso-base-stage3b-x86_64; fi
           id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-base-stage3b-x86_64&per_page=1" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
                | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
-          [ -n "$id" ] || { echo "no stage 3b artifact yet"; exit 1; }
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s3b.zip \
+          [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o in.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
-          unzip -q s3b.zip && sha256sum -c eso-base-stage3b-x86_64.tar.zst.sha256
+          unzip -q in.zip && sha256sum -c $N.tar.zst.sha256
           cp sources.lock bootstrap/sources.lock
           sudo mkdir -p /mnt/eso
-          sudo tar --zstd -xpf eso-base-stage3b-x86_64.tar.zst -C /mnt/eso
-          rm -f s3b.zip eso-base-stage3b-x86_64.tar.zst
-      - name: Build stage 3c inside the ESO chroot
-        run: sudo ESO=/mnt/eso bash bootstrap/stage3c.sh
+          sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
+          rm -f in.zip $N.tar.zst
+          echo "restored $N"
+      - name: Build stage 3c part 1 (up to vim)
+        if: ${{ !inputs.resume }}
+        run: sudo ESO=/mnt/eso PART=1 bash bootstrap/stage3c.sh
+      - name: Save the part-1 checkpoint
+        if: ${{ !inputs.resume }}
+        run: |
+          sudo tar --zstd -T0 -cpf eso-base-stage3c-part1-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
+               --exclude=./sys --exclude=./dev --exclude=./run .
+          sudo chown "$USER" eso-base-stage3c-part1-x86_64.tar.zst
+          sha256sum eso-base-stage3c-part1-x86_64.tar.zst > eso-base-stage3c-part1-x86_64.tar.zst.sha256
+          sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.resume }}
+        with:
+          name: eso-base-stage3c-part1-x86_64
+          path: |
+            eso-base-stage3c-part1-x86_64.tar.zst
+            eso-base-stage3c-part1-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 5
+          compression-level: 0
+      - name: Build stage 3c part 2 (systemd onward)
+        run: |
+          rm -f eso-base-stage3c-part1-x86_64.tar.zst
+          sudo ESO=/mnt/eso PART=2 bash bootstrap/stage3c.sh
       - name: Pack
         run: |
           sudo tar --zstd -cpf eso-base-stage3c-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
