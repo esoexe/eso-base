@@ -17,6 +17,10 @@ pywheel() {  # name tarball
 
 step "systemd $V_systemd"
 unpack systemd "systemd-$V_systemd.tar.gz"
+# Linux 7.x uapi errno.h adds EFSBADCRC/EFSCORRUPTED as aliases (duplicate table entries -> -Werror): drop them like
+# systemd already drops the PA-RISC aliases
+sed -i 's/(ECANCELLED|EREFUSED)/(ECANCELLED|EREFUSED|EFSBADCRC|EFSCORRUPTED)/' src/basic/generate-errno-list.sh
+grep -q EFSCORRUPTED src/basic/generate-errno-list.sh
 grep -q '^render:' /etc/group || echo 'render:x:30:' >> /etc/group
 grep -q '^sgx:' /etc/group || echo 'sgx:x:31:' >> /etc/group
 grep -q '^systemd-journal:' /etc/group || echo 'systemd-journal:x:23:' >> /etc/group
