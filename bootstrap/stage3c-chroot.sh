@@ -90,7 +90,7 @@ pywheel markupsafe "markupsafe-$V_markupsafe.tar.gz" markupsafe
 pywheel jinja2 "jinja2-$V_jinja2.tar.gz" jinja2
 
 step "kmod $V_kmod"; unpack kmod "kmod-$V_kmod.tar.xz"
-mkdir build && cd build && meson setup --prefix=/usr .. --buildtype=release -D manpages=false >/dev/null
+mkdir build && cd build && meson setup --prefix=/usr .. --buildtype=release -D manpages=false > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
 ninja >/dev/null; ninja install >/dev/null; done_ kmod
 step "coreutils"; unpack coreutils "coreutils-$V_coreutils.tar.xz"
 FORCE_UNSAFE_CONFIGURE=1 cfg --enable-no-install-program=kill,uptime; mv /usr/bin/chroot /usr/sbin 2>/dev/null || true; done_ coreutils
@@ -132,15 +132,15 @@ grep -q '^systemd-journal:' /etc/group || echo 'systemd-journal:x:23:' >> /etc/g
 mkdir build && cd build
 meson setup .. --prefix=/usr --buildtype=release -D default-dnssec=no -D firstboot=false -D install-tests=false \
     -D ldconfig=false -D sysusers=false -D rpmmacrosdir=no -D homed=disabled -D userdb=false -D man=disabled \
-    -D mode=release -D pamconf=false -D dev-kvm-mode=0660 -D nobody-group=nogroup -D sysupdate=disabled \
-    -D ukify=disabled -D docdir=/usr/share/doc/systemd >/dev/null
+    -D mode=release -D pam=disabled -D dev-kvm-mode=0660 -D nobody-group=nogroup -D sysupdate=disabled \
+    -D ukify=disabled -D docdir=/usr/share/doc/systemd > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
 ninja >/dev/null; ninja install >/dev/null
 systemd-machine-id-setup >/dev/null 2>&1 || true
 systemctl preset-all >/dev/null 2>&1 || true
 done_ systemd
 
 step "D-Bus $V_dbus"; unpack dbus "dbus-$V_dbus.tar.xz"
-mkdir build && cd build && meson setup --prefix=/usr --buildtype=release --wrap-mode=nofallback .. >/dev/null
+mkdir build && cd build && meson setup --prefix=/usr --buildtype=release --wrap-mode=nofallback .. > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
 ninja >/dev/null; ninja install >/dev/null; mkdir -p /var/lib/dbus; ln -sf /etc/machine-id /var/lib/dbus/machine-id; done_ dbus
 step "procps-ng"; unpack procps "procps-ng-$V_procps.tar.xz"
 cfg --disable-static --disable-kill --enable-watch8bit --with-systemd; done_ procps
