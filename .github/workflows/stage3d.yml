@@ -43,7 +43,7 @@ jobs:
         run: sudo ESO=/mnt/eso bash bootstrap/stage3d.sh
       - name: Make the bootable disk image
         run: |
-          sudo apt-get install -y -qq dosfstools qemu-system-x86 ovmf zstd >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq dosfstools qemu-system-x86 ovmf zstd >/dev/null
           sudo ESO=/mnt/eso bash bootstrap/make-image.sh eso-base.img
           sudo chown "$USER" eso-base.img
       - name: Boot test in QEMU (BIOS and UEFI) - must reach the login prompt

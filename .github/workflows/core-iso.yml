@@ -28,7 +28,7 @@ jobs:
           rm -f s3d.zip eso-base-stage3d-x86_64.tar.zst
           sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
       - name: Host packing tools
-        run: sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 ovmf >/dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 ovmf >/dev/null
       - name: Build the ESO Core ISO
         run: |
           sudo ESO=/mnt/eso bash bootstrap/make-iso.sh eso-core-x86_64.iso
