@@ -4,6 +4,11 @@ on:
     workflows: ["ESO Base - stage 4 (graphics: X11 libs, Wayland, Mesa, libinput, Xwayland)"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      resume:
+        description: "Continue from the last (partial) stage 4b tree: skips LLVM/Clang if they are already built"
+        type: boolean
+        default: false
 permissions:
   actions: read
   contents: read
@@ -20,6 +25,7 @@ jobs:
         run: |
           set -e
           N=eso-base-stage4-x86_64
+          if [ "${{ inputs.resume }}" = "true" ]; then N=eso-base-stage4b-x86_64; fi
           id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
                | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
@@ -33,13 +39,15 @@ jobs:
           df -h /
       - name: Build stage 4b inside the ESO chroot
         run: sudo ESO=/mnt/eso bash bootstrap/stage4b.sh
-      - name: Pack
+      - name: Pack (also after a failure, so a retry with resume skips the LLVM build)
+        if: always()
         run: |
           sudo tar --zstd -cpf eso-base-stage4b-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
                --exclude=./sys --exclude=./dev --exclude=./run . && sudo chown "$USER" eso-base-stage4b-x86_64.tar.zst
           sha256sum eso-base-stage4b-x86_64.tar.zst | tee eso-base-stage4b-x86_64.tar.zst.sha256
           sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: eso-base-stage4b-x86_64
           path: |
