@@ -132,7 +132,7 @@ grep -q '^systemd-journal:' /etc/group || echo 'systemd-journal:x:23:' >> /etc/g
 mkdir build && cd build
 meson setup .. --prefix=/usr --buildtype=release -D default-dnssec=no -D firstboot=false -D install-tests=false \
     -D ldconfig=false -D sysusers=false -D rpmmacrosdir=no -D homed=disabled -D userdb=false -D man=disabled \
-    -D mode=release -D pam=disabled -D dev-kvm-mode=0660 -D nobody-group=nogroup -D sysupdate=disabled \
+    -D mode=release -D pam=disabled -D kmod=enabled -D blkid=enabled -D acl=enabled -D dev-kvm-mode=0660 -D nobody-group=nogroup -D sysupdate=disabled \
     -D ukify=disabled -D docdir=/usr/share/doc/systemd > /tmp/meson.log 2>&1 || { tail -40 /tmp/meson.log; exit 1; }
 ninja >/dev/null; ninja install >/dev/null
 systemd-machine-id-setup >/dev/null 2>&1 || true
