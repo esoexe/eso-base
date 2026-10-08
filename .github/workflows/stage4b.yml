@@ -1,0 +1,49 @@
+name: "ESO Base - stage 4b (LLVM, Clang, full Mesa with Vulkan)"
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 4 (graphics: X11 libs, Wayland, Mesa, libinput, Xwayland)"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  mesa-full:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore ESO Base stage 4 (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          N=eso-base-stage4-x86_64
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s.zip $N.tar.zst $N.tar.zst.sha256 sources.lock && sha256sum -c $N.tar.zst.sha256
+          cp sources.lock bootstrap/sources.lock
+          sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
+          rm -f s.zip $N.tar.zst*
+          df -h /
+      - name: Build stage 4b inside the ESO chroot
+        run: sudo ESO=/mnt/eso bash bootstrap/stage4b.sh
+      - name: Pack
+        run: |
+          sudo tar --zstd -cpf eso-base-stage4b-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
+               --exclude=./sys --exclude=./dev --exclude=./run . && sudo chown "$USER" eso-base-stage4b-x86_64.tar.zst
+          sha256sum eso-base-stage4b-x86_64.tar.zst | tee eso-base-stage4b-x86_64.tar.zst.sha256
+          sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-base-stage4b-x86_64
+          path: |
+            eso-base-stage4b-x86_64.tar.zst
+            eso-base-stage4b-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 30

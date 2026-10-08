@@ -1,0 +1,7 @@
+cmake 4.1.2 https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2.tar.gz
+llvm 21.1.3 https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.3/llvm-project-21.1.3.src.tar.xz
+spirvheaders 1.4.321.0 https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-1.4.321.0.tar.gz
+spirvtools 1.4.321.0 https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/vulkan-sdk-1.4.321.0.tar.gz
+spirvllvm 21.1.1 https://github.com/KhronosGroup/SPIRV-LLVM-Translator/archive/refs/tags/v21.1.1.tar.gz
+glslang 15.4.0 https://github.com/KhronosGroup/glslang/archive/refs/tags/15.4.0.tar.gz
+mesa 25.2.3 https://archive.mesa3d.org/mesa-25.2.3.tar.xz
