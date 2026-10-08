@@ -1,8 +1,5 @@
 name: "ESO Core - live ISO (first edition on ESO Base)"
 on:
-  workflow_run:
-    workflows: ["ESO Base - stage 3d (ESO Kernel, bootable image, boot test)"]
-    types: [completed]
   workflow_dispatch:
 permissions:
   actions: read
