@@ -99,7 +99,7 @@ ms libevdev -Dtests=disabled -Ddocumentation=disabled
 ms libinput -Dlibwacom=false -Ddebug-gui=false -Dtests=false -Ddocumentation=false
 ms seatd -Dlibseat-logind=systemd -Dserver=enabled -Dexamples=disabled -Dman-pages=disabled
 ms xwayland -Dxvfb=false -Dsecure-rpc=false -Dglamor=true -Ddri3=true -Dsha1=libcrypto -Dlibdecor=false \
-    -Dxwayland_eglstream=false -Ddocs=false -Dxselinux=false
+    -Dxwayland_ei=false -Ddocs=false -Dxselinux=false -Dvendor_name="ESO OS" -Dvendor_web=https://esoos.dpdns.org
 
 # ── proof: OpenGL renders inside ESO Base (EGL surfaceless + softpipe, no GPU needed) ──
 step "smoke test: EGL + OpenGL ES on ESO's Mesa"
