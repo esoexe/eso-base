@@ -10,6 +10,11 @@ size=200MiB, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name=esp
 type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709, name=root
 P
 LOOP=$(losetup --show -fP "$IMG")
+partx -a "$LOOP" 2>/dev/null || true; udevadm settle 2>/dev/null || true
+for n in 1 2 3; do      # partition nodes: udev normally creates them; build hosts without udev get them from /sys
+    b=$(basename "$LOOP")p$n
+    [[ -b /dev/$b ]] || { [[ -r /sys/class/block/$b/dev ]] && mknod "/dev/$b" b $(tr ':' ' ' < "/sys/class/block/$b/dev"); }
+done
 M=$(mktemp -d)
 cleanup() { umount -R "$M" 2>/dev/null || true; losetup -d "$LOOP" 2>/dev/null || true; }
 trap cleanup EXIT
