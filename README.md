@@ -9,12 +9,19 @@ by ESO's own build system, in ESO's own package format, managed by ESO's own pac
 
 | Stage | What it builds | Status |
 |-------|----------------|--------|
-| 1 | Cross toolchain: binutils, GCC, Linux headers (ESO Kernel 7.2.9), glibc, libstdc++ | in progress |
-| 2 | Temporary tools (bash, coreutils, make, sed, tar, xz, python …) in a clean chroot | planned |
-| 3 | Final system: toolchain rebuilt natively, systemd, util-linux, openssl, NetworkManager | planned |
-| 4 | Graphics: Mesa, libinput, Xorg / Wayland, Hyprland | planned |
-| 5 | Desktop stack: GLib, GTK 3/4, PyGObject, WebKitGTK, PipeWire | planned |
-| 6 | ESO desktop + apps, installer, ISO | planned |
+| 1 | Cross toolchain: binutils, GCC, Linux headers (ESO Kernel 7.2.9), glibc, libstdc++ | done |
+| 2 | Temporary tools (bash, coreutils, make, sed, tar, xz, python ...) in a clean chroot | done |
+| 3 | Final system: native toolchain, systemd, util-linux, OpenSSL, GRUB, the ESO Kernel; bootable ESO Core ISO | done |
+| 4 | Graphics: X11 libraries, Wayland, Mesa, libinput, Xwayland, fonts | done |
+| 4b | LLVM + Clang, SPIR-V tools, libclc, glslang, full Mesa (Intel, AMD, NVIDIA nouveau, virtual GPUs, Vulkan) | building |
+| 5 | GTK 3 stack: GLib, GObject introspection, Cairo, Pango (Arabic shaping), librsvg, GTK 3, PyGObject, GtkSourceView, VTE | ready |
+| 5b | Login (Linux-PAM, sudo), CA certificates, curl, polkit, NetworkManager + Wi-Fi, PipeWire sound, UPower, accounts | ready |
+| 5c | Desktop session: X server, xfwm4, libwnck, small X tools, fonts | planned |
+| 5d | Media and web: GStreamer, FFmpeg, libsoup, WebKitGTK (ESO Browser) | planned |
+| 6 | ESO desktop + apps, Node.js, installer, ESO ISO with no Debian inside | planned |
+
+Each stage runs on GitHub's free runners inside the ESO chroot (no network inside: every source is a pinned
+download listed in `bootstrap/sources-*.list`) and hands the finished system to the next stage as an artifact.
 
 Packages are plain `.tar.zst` archives with a small `.ESOINFO` header, installed by `epm` (ESO package manager).
 

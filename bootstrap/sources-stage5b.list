@@ -1,0 +1,27 @@
+# ESO Base stage 5b: login (PAM), certificates, curl, sudo, polkit, NetworkManager + Wi-Fi, PipeWire sound, power
+linuxpam 1.7.3 https://github.com/linux-pam/linux-pam/releases/download/v1.7.3/Linux-PAM-1.7.3.tar.xz
+shadow 4.18.0 https://github.com/shadow-maint/shadow/releases/download/4.18.0/shadow-4.18.0.tar.xz
+systemd 257.8 https://github.com/systemd/systemd/archive/v257.8/systemd-257.8.tar.gz
+cacert 2026 https://curl.se/ca/cacert.pem
+libpsl 0.23.3 https://github.com/rockdaboot/libpsl/releases/download/0.23.3/libpsl-0.23.3.tar.gz
+curl 8.22.0 https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.xz
+sudo 1.9.17p2 https://github.com/sudo-project/sudo/releases/download/v1.9.17p2/sudo-1.9.17p2.tar.gz
+duktape 2.7.0 https://github.com/svaarala/duktape/releases/download/v2.7.0/duktape-2.7.0.tar.xz
+polkit 127 https://github.com/polkit-org/polkit/archive/refs/tags/127.tar.gz
+jsonc 0.19 https://github.com/json-c/json-c/archive/refs/tags/json-c-0.19-20260627.tar.gz
+accountsservice 26.27.3 https://gitlab.freedesktop.org/api/v4/projects/accountsservice%2Faccountsservice/repository/archive.tar.gz?sha=26.27.3
+libgudev 238 https://download.gnome.org/sources/libgudev/238/libgudev-238.tar.xz
+upower 1.91.5 https://gitlab.freedesktop.org/api/v4/projects/upower%2Fupower/repository/archive.tar.gz?sha=v1.91.5
+libnl 3.12.0 https://github.com/thom311/libnl/releases/download/libnl3_12_0/libnl-3.12.0.tar.gz
+libndp 1.9 https://github.com/jpirko/libndp/archive/refs/tags/v1.9.tar.gz
+networkmanager 1.58.1 https://gitlab.freedesktop.org/api/v4/projects/NetworkManager%2FNetworkManager/repository/archive.tar.gz?sha=1.58.1
+wpasupplicant 2.12 https://w1.fi/releases/wpa_supplicant-2.12.tar.gz
+iw 6.17 https://mirrors.edge.kernel.org/pub/software/network/iw/iw-6.17.tar.xz
+wirelessregdb 2026.09.03 https://mirrors.edge.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-2026.09.03.tar.xz
+alsalib 1.2.16.1 https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.16.1.tar.bz2
+alsaucm 1.2.16.1 https://www.alsa-project.org/files/pub/lib/alsa-ucm-conf-1.2.16.1.tar.bz2
+alsautils 1.2.16 https://www.alsa-project.org/files/pub/utils/alsa-utils-1.2.16.tar.bz2
+lua 5.4.9 https://www.lua.org/ftp/lua-5.4.9.tar.gz
+pipewire 1.6.9 https://gitlab.freedesktop.org/api/v4/projects/pipewire%2Fpipewire/repository/archive.tar.gz?sha=1.6.9
+wireplumber 0.5.18 https://gitlab.freedesktop.org/api/v4/projects/pipewire%2Fwireplumber/repository/archive.tar.gz?sha=0.5.18
+earlyoom 1.9.0 https://github.com/rfjakob/earlyoom/archive/refs/tags/v1.9.0.tar.gz
