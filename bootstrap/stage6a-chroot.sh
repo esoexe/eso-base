@@ -69,8 +69,13 @@ cm poppler -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=OF
            -DBUILD_QT6_TESTS=OFF -DENABLE_UNSTABLE_API_ABI_HEADERS=OFF
 # eso-polkit looks for /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
 ac polkitgnome --libexecdir=/usr/lib/polkit-gnome CFLAGS="-O2 -std=gnu17 -Wno-error=incompatible-pointer-types"
-ms plymouth -Ddocs=false -Dgtk=disabled -Drelease-file=/etc/os-release -Dsystemd-integration=true -Dudev=enabled \
-            -Dpango=enabled -Dfreetype=enabled -Ddrm=true -Dlogo=/usr/share/pixmaps/eso-logo.png
+# plymouth reads its version from a "plymouth-<ver>" directory name or git; ESO unpacks into /sources/plymouth
+step "plymouth $V_plymouth"; unpack plymouth "$(src plymouth)"
+printf '#!/bin/sh\necho %s\n' "$V_plymouth" > scripts/generate-version.sh; chmod +x scripts/generate-version.sh
+quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Ddocs=false -Dgtk=disabled \
+      -Drelease-file=/etc/os-release -Dsystemd-integration=true -Dudev=enabled -Dpango=enabled -Dfreetype=enabled \
+      -Ddrm=true -Dlogo=/usr/share/pixmaps/eso-logo.png
+quiet ninja -C build; quiet ninja -C build install; done_ plymouth
 
 # ───────────────────────────── python ─────────────────────────────
 pyw six
