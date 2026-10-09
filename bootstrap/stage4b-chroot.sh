@@ -28,7 +28,8 @@ if [[ ! -x /usr/bin/clang ]]; then
         -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_DOCS=OFF \
         -DCLANG_INCLUDE_TESTS=OFF -DCLANG_INCLUDE_DOCS=OFF -DLLVM_PARALLEL_LINK_JOBS=2 -DLLVM_INSTALL_UTILS=ON
     quiet ninja -C build -j"$J"; quiet ninja -C build install
-    cp -a libclc /sources/libclc-src          # libclc is in the same tarball, built after the SPIR-V translator
+    mkdir -p /sources/llvm-part/llvm          # libclc is in the same tarball, built after the SPIR-V translator
+    cp -a libclc cmake /sources/llvm-part/; cp -a llvm/cmake /sources/llvm-part/llvm/
     done_ llvm
 fi
 
@@ -46,15 +47,14 @@ quiet cmake -B build $CM -DBUILD_SHARED_LIBS=ON -DLLVM_EXTERNAL_SPIRV_HEADERS_SO
     -DLLVM_EXTERNAL_LIT=/bin/true -DLLVM_INCLUDE_TESTS=OFF
 quiet ninja -C build; quiet ninja -C build install; done_ spirvllvm
 step "libclc (OpenCL built-ins for Mesa)"
-if [[ ! -d /sources/libclc-src ]]; then          # resumed run: LLVM was already installed, take libclc from its tarball
+if [[ ! -d /sources/llvm-part/libclc ]]; then    # resumed run: LLVM was already installed, take libclc from its tarball
     rm -rf /sources/llvm-part; mkdir -p /sources/llvm-part
     tar -xf "/sources/llvm-project-$V_llvm.src.tar.xz" -C /sources/llvm-part --strip-components=1 \
         "llvm-project-$V_llvm.src/libclc" "llvm-project-$V_llvm.src/cmake" "llvm-project-$V_llvm.src/llvm/cmake"
-    mv /sources/llvm-part/libclc /sources/libclc-src
 fi
-cd /sources/libclc-src
+cd /sources/llvm-part/libclc                     # built inside a partial LLVM tree: it uses ../cmake/Modules
 quiet cmake -B build $CM -DLIBCLC_TARGETS_TO_BUILD="spirv-mesa3d-;spirv64-mesa3d-"
-quiet ninja -C build; quiet ninja -C build install; cd /sources; rm -rf libclc-src
+quiet ninja -C build; quiet ninja -C build install; cd /sources; rm -rf llvm-part
 step "glslang $V_glslang"; unpack glslang "$(basename /sources/glslang-*.tar.gz)"
 quiet cmake -B build $CM -DALLOW_EXTERNAL_SPIRV_TOOLS=ON -DBUILD_SHARED_LIBS=ON -DGLSLANG_TESTS=OFF -DENABLE_OPT=ON
 quiet ninja -C build; quiet ninja -C build install; done_ glslang
