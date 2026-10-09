@@ -75,6 +75,9 @@ printf '#!/bin/sh\necho %s\n' "$V_plymouth" > scripts/generate-version.sh; chmod
 quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Ddocs=false -Dgtk=disabled \
       -Drelease-file=/etc/os-release -Dsystemd-integration=true -Dudev=enabled -Dpango=enabled -Dfreetype=enabled \
       -Ddrm=true -Dlogo=/usr/share/pixmaps/eso-logo.png
+# install links the splash watermark to the logo: a transparent placeholder now, eso-desktop (stage 6c) puts the real one
+[[ -e /usr/share/pixmaps/eso-logo.png ]] || { install -d /usr/share/pixmaps
+    python3 -c 'import cairo; cairo.ImageSurface(cairo.FORMAT_ARGB32, 1, 1).write_to_png("/usr/share/pixmaps/eso-logo.png")'; }
 quiet ninja -C build; quiet ninja -C build install; done_ plymouth
 
 # ───────────────────────────── python ─────────────────────────────
