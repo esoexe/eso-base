@@ -1,0 +1,63 @@
+name: "ESO Base - stage 5f (WebKitGTK: the ESO Browser engine)"
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 5e (web foundations: ICU, libsoup 3, TLS, sandbox)"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      resume:
+        description: "Continue the WebKit build tree packed by the last (timed-out) stage 5f run"
+        type: boolean
+        default: false
+permissions:
+  actions: read
+  contents: read
+jobs:
+  webkit:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make room (WebKit's build tree is large) and add swap
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo swapoff -a || true; sudo rm -f /mnt/swapfile /swapfile
+          sudo fallocate -l 10G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile
+          free -h; df -h /
+      - name: Restore ESO Base stage 5e (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          N=eso-base-stage5e-x86_64
+          if [ "${{ inputs.resume }}" = "true" ]; then N=eso-base-stage5f-x86_64; fi
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s.zip $N.tar.zst $N.tar.zst.sha256 sources.lock && sha256sum -c $N.tar.zst.sha256
+          cp sources.lock bootstrap/sources.lock
+          sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
+          rm -f s.zip $N.tar.zst*
+          df -h /
+      - name: Build stage 5f inside the ESO chroot
+        run: sudo ESO=/mnt/eso bash bootstrap/stage5f.sh
+      - name: Pack (also after a failure, so a retry with resume continues the WebKit build)
+        if: always()
+        run: |
+          sudo tar --zstd -cpf eso-base-stage5f-x86_64.tar.zst -C /mnt/eso --exclude=./sources --exclude=./proc \
+               --exclude=./sys --exclude=./dev --exclude=./run . && sudo chown "$USER" eso-base-stage5f-x86_64.tar.zst
+          sha256sum eso-base-stage5f-x86_64.tar.zst | tee eso-base-stage5f-x86_64.tar.zst.sha256
+          sudo cp bootstrap/sources.lock sources.lock && sudo chown "$USER" sources.lock
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eso-base-stage5f-x86_64
+          path: |
+            eso-base-stage5f-x86_64.tar.zst
+            eso-base-stage5f-x86_64.tar.zst.sha256
+            sources.lock
+          retention-days: 30

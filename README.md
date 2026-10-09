@@ -19,7 +19,7 @@ by ESO's own build system, in ESO's own package format, managed by ESO's own pac
 | 5c | Desktop session: X.Org server, xfwm4, sxhkd, eso-supertap, dunst, small X tools, Inter + Amiri + emoji fonts | ready |
 | 5d | Sound and video: FFmpeg (x264, dav1d, VA-API), GStreamer (base/good/bad/libav), mpv + libplacebo, PulseAudio client, Vulkan loader | ready |
 | 5e | Web foundations: ICU, libsoup 3 + TLS (OpenSSL), WebP/AVIF/WOFF2, SQLite, libsecret, bubblewrap sandbox, Ruby | ready |
-| 5f | WebKitGTK 4.1 (the ESO Browser engine), built with Clang | planned |
+| 5f | WebKitGTK 4.1 (the ESO Browser engine): resumable build, JavaScriptCore + real WebView smoke test | ready |
 | 6 | ESO desktop + apps, Node.js, installer, ESO ISO with no Debian inside | planned |
 
 Each stage runs on GitHub's free runners inside the ESO chroot (no network inside: every source is a pinned
