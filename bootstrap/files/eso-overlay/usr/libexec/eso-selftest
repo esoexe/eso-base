@@ -16,5 +16,11 @@ printf '%s\n' "${rows[@]}" | sort -rn | head -15 | awk '{printf "ESO-SELFTEST   
 for x in greetd Xorg xfwm4 eso-shell eso-lite-session; do
     pgrep -f "$x" >/dev/null && echo "ESO-SELFTEST running: $x" || echo "ESO-SELFTEST NOT running: $x"
 done
+# ESO updates on ESO Base: a real signed check against the live ESO update server (installs nothing)
+if [[ -x /usr/local/libexec/eso-update ]]; then
+    u=$(timeout 120 /usr/local/libexec/eso-update check 2>&1 | tail -1)
+    echo "ESO-SELFTEST update-check: ${u:0:300}"
+    echo "ESO-SELFTEST eso-packages: $(cd /var/lib/eso/pkgs 2>/dev/null && for f in *.control; do printf '%s=%s ' "${f%.control}" "$(sed -n 's/^Version: //p' "$f")"; done)"
+fi
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
 echo "ESO-SELFTEST end"

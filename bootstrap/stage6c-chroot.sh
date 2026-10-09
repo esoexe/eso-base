@@ -71,14 +71,15 @@ tar -xJf /sources/JetBrainsMono.tar.xz -C /usr/share/fonts/jetbrains-mono-nerd -
 fc-cache -f >/dev/null
 
 # ───────────────────────────── the ESO desktop ─────────────────────────────
-step "ESO desktop $V_esodesktop (eso-desktop package, unpacked without dpkg)"
+step "ESO desktop $V_esodesktop (eso-desktop package, installed by ESO's own installer: no dpkg)"
+python3 -c "import lzma, tarfile, hashlib, ssl" || { echo "FAILED: python3 lacks lzma/ssl (needed by ESO updates)"; exit 1; }
 D=$(mktemp -d); cd "$D"; ar x "/sources/eso-desktop_${V_esodesktop}_all.deb"
-tar -xf data.tar.* -C / --no-same-owner
-tar -xf control.tar.* ./control 2>/dev/null || tar -xf control.tar.* control
-install -d /var/lib/eso; cp control /var/lib/eso/eso-desktop.control      # what is installed, for eso-update
-cd /; rm -rf "$D"
-bash /usr/share/eso/src/system/eso-deploy-system.sh /usr/share/eso/src > /tmp/deploy.log 2>&1 \
-    || { tail -40 /tmp/deploy.log; echo "FAILED: eso-deploy-system.sh"; exit 1; }
+tar -xf data.tar.* ./usr/share/eso/src/lib/eso/esobasepkg.py      # the installer comes from the package itself
+cd /
+# installs every file, records /var/lib/eso/pkgs/eso-desktop.{control,list} and runs its postinst (eso-deploy-system.sh)
+ESO_BASE_PKG=1 python3 "$D/usr/share/eso/src/lib/eso/esobasepkg.py" install-local "/sources/eso-desktop_${V_esodesktop}_all.deb" \
+    > /tmp/deploy.log 2>&1 || { tail -40 /tmp/deploy.log; echo "FAILED: installing eso-desktop"; exit 1; }
+rm -rf "$D"; tail -1 /tmp/deploy.log
 echo "  deployed: $(ls /usr/local/bin | wc -l) programs, $(ls /usr/local/lib/eso | wc -l) modules"
 step "/etc/skel: a full per-user ESO setup made by ESO's install.sh"
 SRC=/usr/share/eso/src; T=/tmp/eso-skel-home
@@ -140,6 +141,20 @@ for s in "$SRC/system/tune/install-tune.sh" "$SRC/system/account/install-account
 done
 glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null || true
 gtk-update-icon-cache -qf /usr/share/icons/hicolor 2>/dev/null || true
+
+# ───────────────────────────── ESO updates on ESO Base ─────────────────────────────
+step "ESO updates: eso-update runs in ESO Base mode (no apt/dpkg), signing key + verifier present"
+command -v gpgv >/dev/null || { echo "FAILED: gpgv missing (ESO updates verify signatures with it)"; exit 1; }
+[[ -s /usr/share/keyrings/eso-archive-keyring.pgp ]] || { echo "FAILED: ESO signing key missing"; exit 1; }
+python3 - <<'PY' || { echo "FAILED: eso-update ESO Base mode"; exit 1; }
+import importlib.machinery, importlib.util, sys
+l = importlib.machinery.SourceFileLoader("eu", "/usr/local/libexec/eso-update")
+s = importlib.util.spec_from_loader("eu", l); m = importlib.util.module_from_spec(s); l.exec_module(m)
+assert m.BASE, "eso-update did not detect ESO Base"
+v = m.installed_version()
+assert v and m.vcmp(v, "3.10.0") > 0, f"installed version {v!r}"
+print(f"  eso-update: ESO Base mode, ESO {v} installed, kernel updates {'on' if m.kernel_allowed() else 'off (built in)'}")
+PY
 
 # ───────────────────────────── smoke test ─────────────────────────────
 step "smoke test: ESO's own programs start on ESO Base (Xvfb, no Debian)"

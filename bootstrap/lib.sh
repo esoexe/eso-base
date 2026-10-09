@@ -8,6 +8,12 @@ fetch() {
         if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$u"; then mv "$out.part" "$out"; return 0; fi
         echo "download failed: $u" >&2
     done
+    # freedesktop.org & co. sometimes refuse CI machines (HTTP 418/429/503): wait, retry, then the web archive copy
+    sleep 45
+    if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$url"; then mv "$out.part" "$out"; return 0; fi
+    echo "download failed again: $url (trying the web archive copy)" >&2
+    if curl -fsSL --retry 3 --connect-timeout 20 --max-time 1800 -o "$out.part" "https://web.archive.org/web/2026id_/$url" &&
+       ! head -c 512 "$out.part" | grep -qi "<html"; then mv "$out.part" "$out"; return 0; fi
     rm -f "$out.part"; return 1
 }
 # fetch_list LIST DIR: download + verify against sources.lock; writes VERSIONS (name=ver) to DIR/versions.env
