@@ -51,7 +51,14 @@ unpack rust "rust-$V_rust-x86_64-unknown-linux-gnu.tar.xz"
 quiet ./install.sh --prefix=/opt/rust --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu --disable-ldconfig
 done_ rust
 export PATH=/opt/rust/bin:$PATH
-ac librsvg --disable-gtk-doc --enable-introspection --disable-vala
+step "librsvg (Rust crates vendored on the host from its Cargo.lock; cargo builds offline)"
+unpack librsvg "$(src librsvg)"
+tar -xf /sources/librsvg-vendor.tar
+mkdir -p .cargo
+printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n\n[net]\noffline = true\n' > .cargo/config.toml
+quiet ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --disable-gtk-doc \
+    --enable-introspection --disable-vala
+quiet make; quiet make install; done_ librsvg
 gdk-pixbuf-query-loaders --update-cache
 
 ms gtk3 -Dintrospection=true -Dx11_backend=true -Dwayland_backend=true -Dbroadway_backend=false -Dexamples=false \
