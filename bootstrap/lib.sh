@@ -8,6 +8,10 @@ fetch() {
         if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$u"; then mv "$out.part" "$out"; return 0; fi
         echo "download failed: $u" >&2
     done
+    # ESO's own source mirror (GitHub release "sources" of esoexe/eso-base; same bytes, checked against sources.lock)
+    u="https://github.com/esoexe/eso-base/releases/download/sources/${out##*/}"
+    if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$u"; then
+        echo "  (from the ESO source mirror: ${out##*/})" >&2; mv "$out.part" "$out"; return 0; fi
     # freedesktop.org & co. sometimes refuse CI machines (HTTP 418/429/503): wait, retry, then the web archive copy
     sleep 45
     if curl -fsSL --retry 2 --connect-timeout 10 --max-time 900 -o "$out.part" "$url"; then mv "$out.part" "$out"; return 0; fi
