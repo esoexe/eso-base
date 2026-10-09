@@ -50,16 +50,18 @@ jobs:
             -append "eso.live eso.label=ESO_OS eso.selftest loglevel=3 console=ttyS0,115200 console=tty0" \
             -display none -serial file:boot-desktop.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
           sleep 1
-          for i in $(seq -w 1 120); do          # one frame every 2 s for 4 minutes, from power-on
+          for i in $(seq -w 1 300); do          # one frame per second for up to 5 minutes, from power-on
             echo "screendump frames/f$i.ppm" | socat - UNIX-CONNECT:mon.sock >/dev/null 2>&1 || true
             if grep -q "ESO-SELFTEST end" boot-desktop.log 2>/dev/null; then sleep 4; break; fi
-            kill -0 $q 2>/dev/null || break; sleep 2
+            kill -0 $q 2>/dev/null || break; sleep 1
           done
           kill $q 2>/dev/null || true
           echo "frames: $(ls frames | wc -l)"
-          ffmpeg -loglevel error -y -framerate 4 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -c:v libx264 -crf 26 eso-os-boot.mp4 || true
+          # real speed (1 frame/s as captured) + a 4x fast version
+          ffmpeg -loglevel error -y -framerate 1 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -r 25 -c:v libx264 -crf 24 eso-os-boot.mp4 || true
+          ffmpeg -loglevel error -y -framerate 4 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -r 25 -c:v libx264 -crf 26 eso-os-boot-4x.mp4 || true
           last=$(ls frames/f*.ppm | tail -1); ffmpeg -loglevel error -y -i "$last" eso-os-desktop.png || true
-          for n in 015 030 045 060; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
+          for n in 010 030 060 090 120 150; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
           echo "----- ESO self-test (from inside the running ESO OS) -----"
           grep "ESO-SELFTEST" boot-desktop.log | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' | tee selftest.txt || true
           # pass = the ESO session runs and the screen is not blank
@@ -96,6 +98,7 @@ jobs:
           name: eso-os-boot-recording
           path: |
             eso-os-boot.mp4
+            eso-os-boot-4x.mp4
             eso-os-desktop.png
             frame-*.png
             selftest.txt

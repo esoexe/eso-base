@@ -14,7 +14,7 @@ W=$(mktemp -d)
 for p in "greetd-$V_greetd" "tuigreet-$V_tuigreet"; do
     step "vendoring ${p%-*}'s Rust crates (Cargo.lock pinned)"
     mkdir -p "$W/$p"; tar -xf "$ESO/sources/$p.tar.gz" -C "$W/$p" --strip-components=1
-    (cd "$W/$p" && CARGO_HOME="$W/home" "$CARGO" vendor --locked --versioned-dirs vendor > /dev/null)
+    (cd "$W/$p" && PATH="$ESO/opt/rust/bin:$PATH" CARGO_HOME="$W/home" "$CARGO" vendor --locked --versioned-dirs vendor > /dev/null)
     tar -cf "$ESO/sources/${p%-*}-vendor.tar" -C "$W/$p" vendor
     echo "  $(ls "$W/$p/vendor" | wc -l) crates"
 done
