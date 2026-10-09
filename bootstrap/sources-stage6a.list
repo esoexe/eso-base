@@ -1,0 +1,21 @@
+# ESO Base stage 6a: the system apps the ESO desktop calls (all upstream release tarballs)
+npth 1.8 https://www.gnupg.org/ftp/gcrypt/npth/npth-1.8.tar.bz2
+libassuan 3.0.2 https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.2.tar.bz2
+libksba 1.8.1 https://www.gnupg.org/ftp/gcrypt/libksba/libksba-1.8.1.tar.bz2
+gnupg 2.4.9 https://www.gnupg.org/ftp/gcrypt/gnupg/gnupg-2.4.9.tar.bz2
+zsh 5.9.2 https://downloads.sourceforge.net/project/zsh/zsh/5.9.2/zsh-5.9.2.tar.xz
+zshautosuggestions 0.7.1 https://github.com/zsh-users/zsh-autosuggestions/archive/refs/tags/v0.7.1.tar.gz
+zshsyntaxhighlighting 0.8.0 https://github.com/zsh-users/zsh-syntax-highlighting/archive/refs/tags/0.8.0.tar.gz
+jq 1.8.2 https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz
+fastfetch 2.69.0 https://github.com/fastfetch-cli/fastfetch/archive/refs/tags/2.69.0.tar.gz
+btop 1.4.7 https://github.com/aristocratos/btop/archive/refs/tags/v1.4.7.tar.gz
+mesademos 9.0.0 https://archive.mesa3d.org/demos/mesa-demos-9.0.0.tar.xz
+poppler 26.10.0 https://poppler.freedesktop.org/poppler-26.10.0.tar.xz
+plymouth 26.134.222 https://www.freedesktop.org/software/plymouth/releases/plymouth-26.134.222.tar.xz
+polkitgnome 0.105 https://download.gnome.org/sources/polkit-gnome/0.105/polkit-gnome-0.105.tar.xz
+six 1.17.0 https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz
+pythonxlib 0.33 https://github.com/python-xlib/python-xlib/releases/download/0.33/python-xlib-0.33.tar.gz
+etxmlfile 2.0.0 https://files.pythonhosted.org/packages/d3/38/af70d7ab1ae9d4da450eeec1fa3918940a5fafb9055e934af8d6eb0c2313/et_xmlfile-2.0.0.tar.gz
+openpyxl 3.1.5 https://files.pythonhosted.org/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz
+pycparser 3.1 https://files.pythonhosted.org/packages/ac/d3/eb1d3bc30dda12f7e69640ae2ac8cb10240b71fb73024ad528b7d2ae73da/pycparser-3.1.tar.gz
+cffi 2.1.1 https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz
