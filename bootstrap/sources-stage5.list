@@ -1,6 +1,7 @@
 pcre2 10.46 https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.tar.bz2
 glib 2.86.0 https://download.gnome.org/sources/glib/2.86/glib-2.86.0.tar.xz
 gobjectintrospection 1.86.0 https://download.gnome.org/sources/gobject-introspection/1.86/gobject-introspection-1.86.0.tar.xz
+sharedmimeinfo 2.5.1 https://gitlab.freedesktop.org/api/v4/projects/xdg%2Fshared-mime-info/repository/archive.tar.gz?sha=2.5.1
 libjpegturbo 3.1.2 https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.1.2/libjpeg-turbo-3.1.2.tar.gz
 tiff 4.7.1 https://download.osgeo.org/libtiff/tiff-4.7.1.tar.xz
 gdkpixbuf 2.42.12 https://download.gnome.org/sources/gdk-pixbuf/2.42/gdk-pixbuf-2.42.12.tar.xz
@@ -17,6 +18,9 @@ librsvg 2.58.5 https://download.gnome.org/sources/librsvg/2.58/librsvg-2.58.5.ta
 pycairo 1.28.0 https://github.com/pygobject/pycairo/releases/download/v1.28.0/pycairo-1.28.0.tar.gz
 pygobject 3.54.3 https://download.gnome.org/sources/pygobject/3.54/pygobject-3.54.3.tar.gz
 gtksourceview4 4.8.4 https://download.gnome.org/sources/gtksourceview/4.8/gtksourceview-4.8.4.tar.xz
+fastfloat 8.0.0 https://github.com/fastfloat/fast_float/archive/refs/tags/v8.0.0.tar.gz
+fmt 11.1.4 https://github.com/fmtlib/fmt/archive/refs/tags/11.1.4.tar.gz
+simdutf 6.4.0 https://github.com/simdutf/simdutf/archive/refs/tags/v6.4.0.tar.gz
 vte 0.82.0 https://download.gnome.org/sources/vte/0.82/vte-0.82.0.tar.xz
 libnotify 0.8.6 https://download.gnome.org/sources/libnotify/0.8/libnotify-0.8.6.tar.xz
 gsettingsschemas 49.0 https://download.gnome.org/sources/gsettings-desktop-schemas/49/gsettings-desktop-schemas-49.0.tar.xz

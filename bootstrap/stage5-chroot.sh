@@ -30,6 +30,10 @@ ms glib -Dintrospection=disabled -Dman-pages=disabled -Dtests=false -Dsysprof=di
 ms gobjectintrospection
 ms glib -Dintrospection=enabled -Dman-pages=disabled -Dtests=false -Dsysprof=disabled -Dglib_debug=disabled
 
+# file-type database (GIO content types for the ESO file manager; gdk-pixbuf needs it). Its test suite would
+# pull xdgmime over git, so tests and the HTML spec are off.
+ms sharedmimeinfo -Dbuild-tests=false -Dbuild-spec=false -Dupdate-mimedb=true
+
 cm libjpegturbo -DENABLE_STATIC=FALSE -DCMAKE_INSTALL_DEFAULT_LIBDIR=lib
 cm tiff -Dtiff-docs=OFF -Dtiff-tests=OFF -Dtiff-contrib=OFF -Dtiff-tools=OFF
 ms gdkpixbuf -Dman=false -Dothers=enabled -Dtests=false -Dinstalled_tests=false -Dgtk_doc=false -Dintrospection=enabled
@@ -61,9 +65,14 @@ gtk-update-icon-cache -qtf /usr/share/icons/Adwaita || true
 ms pycairo -Dtests=false
 ms pygobject -Dtests=false -Dpycairo=enabled
 ms gtksourceview4 -Dvapi=false -Dgtk_doc=false -Dinstall_tests=false -Dgir=true
-step "vte $V_vte (terminal; meson may fetch its small helper libraries)"
+step "vte $V_vte (terminal) with its fast_float, fmt and simdutf helpers from pinned sources (no git, no download)"
 unpack vte "$(src vte)"
-quiet meson setup build --prefix=/usr --buildtype=release -Dgtk3=true -Dgtk4=false -Dgir=true -Dvapi=false \
+for h in fastfloat:fast_float fmt:fmt simdutf:simdutf; do
+    n=${h%%:*}; d=subprojects/${h#*:}; rm -rf "$d"; mkdir -p "$d"
+    tar -xf "$(ls /sources/$n-*.tar.gz | head -1)" -C "$d" --strip-components=1
+    cp -a "subprojects/packagefiles/${h#*:}/." "$d/"      # vte's meson.build overlay (normally applied by the wrap)
+done
+quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Dgtk3=true -Dgtk4=false -Dgir=true -Dvapi=false \
     -Dgnutls=false -Ddocs=false -D_systemd=true -Dicu=false
 quiet ninja -C build; quiet ninja -C build install; done_ vte
 ms libnotify -Dtests=false -Dintrospection=enabled -Dman=false -Dgtk_doc=false -Ddocbook_docs=disabled
