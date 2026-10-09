@@ -58,9 +58,10 @@ else
     step "WebKitGTK: install"
     ninja install > /tmp/install.log 2>&1 || { tail -40 /tmp/install.log; echo "FAILED: install"; exit 1; }
     ldconfig
-    rm -rf "$W"              # finished: drop the build tree so the stage artifact stays small
+    cd /; rm -rf "$W"        # finished: drop the build tree so the stage artifact stays small
 fi
 
+cd /                         # never run the tests from a deleted build directory
 step "smoke test"
 for f in /usr/lib/libwebkit2gtk-4.1.so /usr/lib/libjavascriptcoregtk-4.1.so /usr/lib/girepository-1.0/WebKit2-4.1.typelib \
          /usr/lib/webkit2gtk-4.1/WebKitWebProcess /usr/lib/webkit2gtk-4.1/WebKitNetworkProcess; do
