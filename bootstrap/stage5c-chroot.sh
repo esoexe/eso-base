@@ -158,7 +158,7 @@ ldconfig
 
 # ───────────────────────────── smoke test: a real ESO-style session on Xvfb ─────────────────────────────
 step "smoke test"
-for t in "Xvfb -version" "sxhkd -v" "dunst -v" "xdotool version" "xclip -version"; do
+for t in "Xorg -version" "sxhkd -v" "dunst -v" "xdotool version" "xclip -version"; do
     printf '  %-10s ' "${t%% *}"; $t > /tmp/v.txt 2>&1 || { cat /tmp/v.txt; echo "FAILED: $t"; exit 1; }
     grep -m1 -iE 'x\.org x server|[0-9]+\.[0-9]' /tmp/v.txt || head -1 /tmp/v.txt
 done
