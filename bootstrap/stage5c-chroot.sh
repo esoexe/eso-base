@@ -13,7 +13,7 @@ set -euo pipefail
 step() { echo; echo "=== $* ($(date -u +%H:%M:%S)) ==="; }
 unpack() { rm -rf "/sources/$1"; mkdir -p "/sources/$1"; tar -xf "/sources/$2" -C "/sources/$1" --strip-components=1; cd "/sources/$1"; }
 declare -A PFX=([xcbutil]=xcb-util [xcbutilkeysyms]=xcb-util-keysyms [xcbutilwm]=xcb-util-wm [xcbutilimage]=xcb-util-image
-                [xcbutilrenderutil]=xcb-util-renderutil [xorgserver]=xorg-server [xf86inputlibinput]=xf86-input-libinput
+                [xcbutilrenderutil]=xcb-util-renderutil [xorgserver]=xorg-server [fontutil]=font-util [xf86inputlibinput]=xf86-input-libinput
                 [startupnotification]=startup-notification)
 src() { local f; f=$(ls /sources/"${PFX[$1]:-$1}"-[0-9v]* 2>/dev/null | grep -E '\.(tar\.(xz|gz|bz2)|tgz)$' | head -1)
         [[ -n $f ]] || { echo "no source tarball for $1" >&2; exit 1; }; basename "$f"; }
@@ -49,6 +49,7 @@ ac xbitmaps
 
 # ───────────────────────────── X server ─────────────────────────────
 # Default font path left alone on purpose: it keeps the server's built-in "fixed" font (no core font packages needed).
+ac fontutil
 ms xorgserver -Dxorg=true -Dxvfb=true -Dxephyr=false -Dxnest=false -Dxwin=false -Dxquartz=false \
     -Dglamor=true -Dglx=true -Ddri3=true -Dsecure-rpc=false -Dsha1=libcrypto -Dudev=true -Dudev_kms=true \
     -Dsystemd_logind=true -Dsuid_wrapper=true -Dhal=false -Dxselinux=false -Dint10=false -Dlinux_apm=false \

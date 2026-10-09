@@ -14,6 +14,7 @@ xcbutilwm 0.4.2 https://xorg.freedesktop.org/archive/individual/lib/xcb-util-wm-
 xcbutilimage 0.4.1 https://xorg.freedesktop.org/archive/individual/lib/xcb-util-image-0.4.1.tar.xz
 xcbutilrenderutil 0.3.10 https://xorg.freedesktop.org/archive/individual/lib/xcb-util-renderutil-0.3.10.tar.xz
 xbitmaps 1.1.4 https://xorg.freedesktop.org/archive/individual/data/xbitmaps-1.1.4.tar.xz
+fontutil 1.4.2 https://xorg.freedesktop.org/archive/individual/font/font-util-1.4.2.tar.xz
 xorgserver 21.1.25 https://xorg.freedesktop.org/archive/individual/xserver/xorg-server-21.1.25.tar.xz
 xf86inputlibinput 1.5.0 https://xorg.freedesktop.org/archive/individual/driver/xf86-input-libinput-1.5.0.tar.xz
 xinit 1.4.4 https://xorg.freedesktop.org/archive/individual/app/xinit-1.4.4.tar.xz
