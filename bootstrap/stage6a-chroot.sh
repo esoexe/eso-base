@@ -59,6 +59,7 @@ step "btop $V_btop"; unpack btop "$(src btop)"
 quiet make PREFIX=/usr STATIC=false GPU_SUPPORT=true ADDFLAGS=-O2; quiet make install PREFIX=/usr; done_ btop
 
 # ───────────────────────────── desktop pieces ─────────────────────────────
+ms glu -Dgl_provider=gl -Ddefault_library=shared      # mesa-demos needs GLU when X11 is there
 ms mesademos -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dglut=disabled -Dosmesa=disabled -Dlibdrm=enabled \
              -Dx11=enabled -Dvulkan=disabled -Dwayland=disabled
 cm poppler -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF \
