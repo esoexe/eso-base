@@ -13,7 +13,7 @@ set -euo pipefail
 step() { echo; echo "=== $* ($(date -u +%H:%M:%S)) ==="; }
 unpack() { rm -rf "/sources/$1"; mkdir -p "/sources/$1"; tar -xf "/sources/$2" -C "/sources/$1" --strip-components=1; cd "/sources/$1"; }
 declare -A PFX=([icu]=icu4c [libgpgerror]=libgpg-error [sqlite]=sqlite-autoconf [glibnetworking]=glib-networking
-                [xdgdbusproxy]=xdg-dbus-proxy)
+                [xdgdbusproxy]=xdg-dbus-proxy [libyaml]=yaml)
 src() { local f; f=$(ls /sources/"${PFX[$1]:-$1}"-[0-9v]* 2>/dev/null | grep -E '\.(tar\.(xz|gz|bz2)|tgz)$' | head -1)
         [[ -n $f ]] || { echo "no source tarball for $1" >&2; ls /sources >&2; exit 1; }; basename "$f"; }
 done_() { cd /sources; rm -rf "/sources/$1"; }
@@ -31,9 +31,12 @@ export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
 
 # ───────────────────────────── build tools ─────────────────────────────
 ac gperf
+ac libyaml                                     # Ruby's YAML (psych): WebKit's code generators read YAML files
 step "Ruby $V_ruby (only for WebKit's code generators)"; unpack ruby "$(src ruby)"
 quiet ./configure --prefix=/usr --disable-install-doc --disable-install-rdoc --disable-yjit --enable-shared
 quiet make; quiet make install; done_ ruby
+ruby -e 'require "yaml"; abort "yaml broken" unless YAML.load("a: 1") == {"a" => 1}' \
+    || { echo "FAILED: Ruby has no working YAML (psych)"; exit 1; }
 
 # ───────────────────────────── text ─────────────────────────────
 step "ICU $V_icu"; unpack icu "$(src icu)"

@@ -18,5 +18,6 @@ libsecret 0.21.8 https://download.gnome.org/sources/libsecret/0.21/libsecret-0.2
 libseccomp 2.6.1 https://github.com/seccomp/libseccomp/releases/download/v2.6.1/libseccomp-2.6.1.tar.gz
 bubblewrap 0.13.0 https://github.com/containers/bubblewrap/releases/download/v0.13.0/bubblewrap-0.13.0.tar.xz
 xdgdbusproxy 0.1.9 https://github.com/flatpak/xdg-dbus-proxy/releases/download/0.1.9/xdg-dbus-proxy-0.1.9.tar.xz
+libyaml 0.2.5 https://github.com/yaml/libyaml/releases/download/0.2.5/yaml-0.2.5.tar.gz
 gperf 3.3 https://ftp.gnu.org/gnu/gperf/gperf-3.3.tar.gz
 ruby 3.4.11 https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.11.tar.xz
