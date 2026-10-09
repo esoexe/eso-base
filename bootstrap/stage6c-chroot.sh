@@ -59,7 +59,7 @@ EOF
 [[ -f /etc/pam.d/sudo ]] && sed -i 's/^auth\( *\)include\( *\)system-auth/auth\1include\2common-auth/' /etc/pam.d/sudo
 install -d /etc/X11; printf 'allowed_users=anybody\nneeds_root_rights=auto\n' > /etc/X11/Xwrapper.config
 # the 3.10 session starts xcape for "tap Windows key = Start"; ESO Base has eso-supertap for exactly that
-[[ -e /usr/bin/xcape ]] || printf '#!/bin/sh\n# ESO Base: xcape compatibility. A lone Super tap sends Ctrl+Escape (Start), as eso-lite-session asks.\nexec /usr/bin/eso-supertap\n' > /usr/bin/xcape
+[[ -e /usr/bin/xcape ]] || printf '#!/bin/sh\n# ESO Base: xcape compatibility. A lone Super tap sends Ctrl+Escape (Start), as eso-lite-session asks.\n# xcape forks into the background and the session goes on; eso-supertap does not fork, so start it in the background.\n/usr/bin/eso-supertap >/dev/null 2>&1 &\nexit 0\n' > /usr/bin/xcape
 chmod 755 /usr/bin/xcape
 
 # ───────────────────────────── fonts ─────────────────────────────
