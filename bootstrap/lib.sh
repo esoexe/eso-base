@@ -19,7 +19,7 @@ fetch_list() {
         fn=${url##*/}
         if [[ $fn == download ]]; then fn=${url%/download}; fn=${fn##*/}; fi    # sourceforge .../file.tar.xz/download
         if [[ $fn == *\?* ]]; then fn="$name-$ver.tar.gz"; fi                     # API archives: archive.tar.gz?sha=TAG
-        if [[ $fn == [0-9v]* ]]; then fn="$name-$fn"; fi                          # tag archives: 0.9.1.tar.gz
+        if [[ $fn == [0-9v]* && $fn != "$name"-* ]]; then fn="$name-$fn"; fi     # tag archives: 0.9.1.tar.gz (not vte-0.82.tar.xz)
         if [[ $fn =~ ^[0-9a-f]{40}\.tar\.gz$ && $fn != "$name"-* ]]; then fn="$name-$fn"; fi   # commit archives: <sha>.tar.gz
         f=$dir/$fn
         [[ -s "$f" ]] || fetch "$url" "$f"
