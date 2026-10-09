@@ -124,7 +124,7 @@ quiet ninja -C build; quiet ninja -C build install; done_ libplacebo
 ms mpv -Dlibmpv=true -Dcplayer=true -Dlua=disabled -Djavascript=disabled -Dmanpage-build=disabled \
     -Dhtml-build=disabled -Dpdf-build=disabled -Dpipewire=enabled -Dpulse=enabled -Dalsa=enabled -Dx11=enabled \
     -Dwayland=enabled -Degl=enabled -Dgl=enabled -Dgl-x11=enabled -Degl-x11=enabled -Dvulkan=enabled \
-    -Dvaapi=enabled -Dvaapi-x11=enabled -Ddrm=enabled -Dlcms2=enabled -Djpeg=enabled -Dtests=false
+    -Dvaapi=enabled -Dvaapi-x11=enabled -Ddrm=disabled -Dlcms2=enabled -Djpeg=enabled -Dtests=false
 ldconfig
 
 # ───────────────────────────── smoke test ─────────────────────────────
