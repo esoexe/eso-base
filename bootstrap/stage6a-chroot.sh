@@ -60,6 +60,10 @@ quiet make PREFIX=/usr STATIC=false GPU_SUPPORT=true ADDFLAGS=-O2; quiet make in
 
 # ───────────────────────────── desktop pieces ─────────────────────────────
 ms glu -Dgl_provider=gl -Ddefault_library=shared      # mesa-demos needs GLU when X11 is there
+# Mesa without glvnd ships gl.pc but no glx.pc (that comes from libglvnd); its libGL *is* the GLX library, so
+# describe it, or mesa-demos silently skips glxinfo/glxgears
+[[ -e /usr/lib/pkgconfig/glx.pc ]] || printf 'Name: glx\nDescription: GLX (in Mesa libGL)\nVersion: %s\nRequires: gl\n' \
+    "$(pkg-config --modversion gl)" > /usr/lib/pkgconfig/glx.pc
 ms mesademos -Degl=enabled -Dgles1=disabled -Dgles2=enabled -Dglut=disabled -Dosmesa=disabled -Dlibdrm=enabled \
              -Dx11=enabled -Dvulkan=disabled -Dwayland=disabled
 cm poppler -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_BOOST=OFF -DENABLE_NSS3=OFF -DENABLE_GPGME=OFF \
