@@ -99,4 +99,7 @@ db = backend.get_default_database()
 print("  libsoup", Soup.get_major_version(), Soup.get_minor_version(), Soup.get_micro_version(),
       "| TLS backend:", type(backend).__name__, "| system CA database loaded:", db is not None)
 PY
+# GStreamer's soup plugin (built in 5d) finds libsoup 3 at runtime: online video/audio streams now work
+rm -rf /root/.cache/gstreamer-1.0
+gst-inspect-1.0 souphttpsrc >/dev/null 2>&1 && echo "  GStreamer souphttpsrc: ok" || echo "  note: souphttpsrc not registered (GStreamer streams will use other sources)"
 step "stage 5e done"; du -sh /usr/lib /usr/share
