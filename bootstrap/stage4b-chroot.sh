@@ -34,10 +34,13 @@ fi
 
 step "SPIR-V Headers"; unpack spirvheaders "$(basename /sources/spirvheaders-*.tar.gz)"
 quiet cmake -B build $CM; quiet ninja -C build install; done_ spirvheaders
-step "SPIR-V Tools"; unpack spirvtools "$(basename /sources/spirvtools-*.tar.gz)"
+# SPIRV-Tools must be built against the headers of its own SDK release (the newer headers above are for the
+# LLVM translator only; their grammar has operand types this SPIRV-Tools does not know)
+step "SPIR-V Tools"; unpack spirvsdkhdr "$(basename /sources/spirvsdkhdr-*.tar.gz)"
+unpack spirvtools "$(basename /sources/spirvtools-*.tar.gz)"
 quiet cmake -B build $CM -DSPIRV_WERROR=OFF -DBUILD_SHARED_LIBS=ON -DSPIRV_TOOLS_BUILD_STATIC=OFF \
-    -DSPIRV-Headers_SOURCE_DIR=/usr -DSPIRV_SKIP_TESTS=ON
-quiet ninja -C build; quiet ninja -C build install; done_ spirvtools
+    -DSPIRV-Headers_SOURCE_DIR=/sources/spirvsdkhdr -DSPIRV_SKIP_TESTS=ON
+quiet ninja -C build; quiet ninja -C build install; done_ spirvtools; done_ spirvsdkhdr
 step "SPIR-V LLVM Translator $V_spirvllvm"; unpack spirvllvm "$(basename /sources/spirvllvm-*.tar.gz)"
 quiet cmake -B build $CM -DBUILD_SHARED_LIBS=ON -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/usr \
     -DLLVM_EXTERNAL_LIT=/bin/true -DLLVM_INCLUDE_TESTS=OFF
