@@ -16,7 +16,7 @@ by ESO's own build system, in ESO's own package format, managed by ESO's own pac
 | 4b | LLVM + Clang, SPIR-V tools, libclc, glslang, full Mesa (Intel, AMD, NVIDIA nouveau, virtual GPUs, Vulkan) | building |
 | 5 | GTK 3 stack: GLib, GObject introspection, Cairo, Pango (Arabic shaping), librsvg, GTK 3, PyGObject, GtkSourceView, VTE | ready |
 | 5b | Login (Linux-PAM, sudo), CA certificates, curl, polkit, NetworkManager + Wi-Fi, PipeWire sound, UPower, accounts | ready |
-| 5c | Desktop session: X server, xfwm4, libwnck, small X tools, fonts | planned |
+| 5c | Desktop session: X.Org server, xfwm4, sxhkd, eso-supertap, dunst, small X tools, Inter + Amiri + emoji fonts | ready |
 | 5d | Media and web: GStreamer, FFmpeg, libsoup, WebKitGTK (ESO Browser) | planned |
 | 6 | ESO desktop + apps, Node.js, installer, ESO ISO with no Debian inside | planned |
 
