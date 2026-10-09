@@ -99,13 +99,25 @@ ms gstpluginsbad $GST_COMMON -Dintrospection=enabled -Dvideoparsers=enabled -Dmp
 ms gstlibav -Ddoc=disabled -Dtests=disabled
 
 # ───────────────────────────── mpv (live wallpapers) ─────────────────────────────
-step "libplacebo $V_libplacebo"; unpack libplacebo "$(src libplacebo)"
+step "libplacebo $V_libplacebo"
+# glslang (stage 4b) compiles libplacebo's Vulkan shaders. glslang 15 keeps libSPIRV only as an empty stub, and a CMake
+# build may have put the libraries in /usr/lib64: make them visible in /usr/lib, or build without it (OpenGL still works)
+for l in glslang SPIRV glslang-default-resource-limits SPIRV-Tools-opt SPIRV-Tools; do
+    for d in /usr/lib64 /usr/local/lib /usr/local/lib64; do
+        for f in "$d"/lib$l.so*; do [[ -e $f && ! -e /usr/lib/${f##*/} ]] && ln -s "$f" "/usr/lib/${f##*/}"; done
+    done
+done
+[[ -e /usr/lib/libSPIRV.so || ! -e /usr/lib/libglslang.so ]] || ln -s libglslang.so /usr/lib/libSPIRV.so
+ldconfig
+echo "  glslang libraries: $(cd /usr/lib && ls libglslang.so libSPIRV.so 2>/dev/null | tr '\n' ' ')"
+GLSLANG=enabled; [[ -e /usr/lib/libSPIRV.so ]] || { GLSLANG=disabled; echo "  WARNING: no glslang library, libplacebo without the Vulkan shader compiler"; }
+unpack libplacebo "$(src libplacebo)"
 # git submodules of libplacebo, from their own pinned releases
 for p in glad:glad jinja:jinja2 markupsafe:markupsafe fast_float:fastfloat Vulkan-Headers:vulkanheaders; do
     mkdir -p "3rdparty/${p%%:*}"; tar -xf "/sources/$(src "${p#*:}")" -C "3rdparty/${p%%:*}" --strip-components=1
 done
 quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Dvulkan=enabled -Dvk-proc-addr=enabled \
-    -Dopengl=enabled -Dgl-proc-addr=enabled -Dd3d11=disabled -Dglslang=enabled -Dshaderc=disabled -Dlcms=enabled \
+    -Dopengl=enabled -Dgl-proc-addr=enabled -Dd3d11=disabled -Dglslang=$GLSLANG -Dshaderc=disabled -Dlcms=enabled \
     -Ddovi=enabled -Dlibdovi=disabled -Dunwind=disabled -Dxxhash=disabled -Ddemos=false -Dtests=false -Dbench=false \
     -Dfuzz=false
 quiet ninja -C build; quiet ninja -C build install; done_ libplacebo
