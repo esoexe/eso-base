@@ -17,7 +17,8 @@ by ESO's own build system, in ESO's own package format, managed by ESO's own pac
 | 5 | GTK 3 stack: GLib, GObject introspection, Cairo, Pango (Arabic shaping), librsvg, GTK 3, PyGObject, GtkSourceView, VTE | ready |
 | 5b | Login (Linux-PAM, sudo), CA certificates, curl, polkit, NetworkManager + Wi-Fi, PipeWire sound, UPower, accounts | ready |
 | 5c | Desktop session: X.Org server, xfwm4, sxhkd, eso-supertap, dunst, small X tools, Inter + Amiri + emoji fonts | ready |
-| 5d | Media and web: GStreamer, FFmpeg, libsoup, WebKitGTK (ESO Browser) | planned |
+| 5d | Sound and video: FFmpeg (x264, dav1d, VA-API), GStreamer (base/good/bad/libav), mpv + libplacebo, PulseAudio client, Vulkan loader | ready |
+| 5e | Web: ICU, libsoup 3, WebKitGTK 4.1 (ESO Browser) | planned |
 | 6 | ESO desktop + apps, Node.js, installer, ESO ISO with no Debian inside | planned |
 
 Each stage runs on GitHub's free runners inside the ESO chroot (no network inside: every source is a pinned
