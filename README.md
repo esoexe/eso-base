@@ -22,7 +22,8 @@ by ESO's own build system, in ESO's own package format, managed by ESO's own pac
 | 5f | WebKitGTK 4.1 (the ESO Browser engine): resumable build, JavaScriptCore + real WebView smoke test | ready |
 | 6a | System apps for the ESO desktop: GnuPG (signed updates), zsh + plugins, jq, fastfetch, btop, poppler, polkit-gnome, plymouth, mesa-demos, Python libs | ready |
 | 6b | Node.js 24 LTS on system OpenSSL/zlib/ICU (ESO Search engine, Ilyass tooling) | ready |
-| 6c | greetd login, the ESO desktop itself, ESO ISO with no Debian inside | planned |
+| 6c | greetd + tuigreet login, the ESO desktop (eso-desktop 3.10.0 unpacked without dpkg), ESO system config, zram | ready |
+| ISO | ESO OS live ISO on ESO Base (BIOS + UEFI), boot test with screen recording and in-guest RAM report | ready |
 
 Each stage runs on GitHub's free runners inside the ESO chroot (no network inside: every source is a pinned
 download listed in `bootstrap/sources-*.list`) and hands the finished system to the next stage as an artifact.

@@ -1,0 +1,3 @@
+# ESO Lock (eso-lockscreen) — same password rules as the login screen
+@include common-auth
+@include common-account

@@ -1,0 +1,17 @@
+[Default Applications]
+x-scheme-handler/http=eso-browser.desktop;firefox-esr.desktop
+x-scheme-handler/https=eso-browser.desktop;firefox-esr.desktop
+text/html=eso-browser.desktop;firefox-esr.desktop
+application/xhtml+xml=eso-browser.desktop;firefox-esr.desktop
+inode/directory=thunar.desktop
+application/vnd.debian.binary-package=eso-store.desktop
+application/x-deb=eso-store.desktop
+application/vnd.flatpak.ref=eso-store.desktop
+application/vnd.flatpak=eso-store.desktop
+application/vnd.appimage=eso-store.desktop
+application/x-appimage=eso-store.desktop
+video/mp4=mpv.desktop
+video/x-matroska=mpv.desktop
+video/webm=mpv.desktop
+audio/mpeg=mpv.desktop
+audio/flac=mpv.desktop

@@ -1,0 +1,4 @@
+# ESO OS: compressed RAM swap (helps 4 GB machines a lot)
+ALGO=zstd
+PERCENT=60
+PRIORITY=100

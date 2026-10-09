@@ -42,9 +42,9 @@ cat > "$W/init" <<'INIT'
 #!/bin/bash
 PATH=/usr/bin:/usr/sbin
 mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev; mount -t tmpfs tmpfs /run
-root= ro=ro init=/usr/lib/systemd/systemd live=0
+root= ro=ro init=/usr/lib/systemd/systemd live=0 label=ESO_CORE
 for a in $(cat /proc/cmdline); do
-    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; esac
+    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; eso.label=*) label=${a#eso.label=};; esac
 done
 /usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
 udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
@@ -53,11 +53,11 @@ for m in virtio_pci virtio_blk virtio_scsi ahci ata_piix nvme sd_mod sr_mod mmc_
          usb_storage uas hv_storvsc vmw_pvscsi mptspi ext4 btrfs xfs vfat; do modprobe -q $m 2>/dev/null; done
 udevadm settle --timeout=10
 if [[ $live == 1 ]]; then
-    # ESO live medium (ISO9660 label ESO_CORE): squashfs read-only + RAM overlay, nothing written to the disk
+    # ESO live medium (ISO9660 label ESO_CORE, or eso.label=...): squashfs read-only + RAM overlay, nothing written to the disk
     for m in isofs squashfs overlay loop sr_mod cdrom usb_storage uas; do modprobe -q $m; done
     med=
-    for ((i = 0; i < 100; i++)); do med=$(findfs LABEL=ESO_CORE 2>/dev/null) && break; sleep 0.2; done
-    [[ -n $med ]] || { echo "ESO: live medium (label ESO_CORE) not found"; exec bash; }
+    for ((i = 0; i < 100; i++)); do med=$(findfs LABEL=$label 2>/dev/null) && break; sleep 0.2; done
+    [[ -n $med ]] || { echo "ESO: live medium (label $label) not found"; exec bash; }
     mkdir -p /run/eso/{medium,sq,ov}
     mount -o ro "$med" /run/eso/medium || { echo "ESO: cannot mount $med"; exec bash; }
     sq=$(ls /run/eso/medium/live/*.squashfs 2>/dev/null | sed -n 1p)

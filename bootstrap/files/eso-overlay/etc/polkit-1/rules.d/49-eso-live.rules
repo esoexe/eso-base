@@ -1,0 +1,4 @@
+// live session only (deleted by eso-firstboot on installed systems)
+polkit.addRule(function(action, subject) {
+    if (subject.user == "eso" && subject.local && subject.active) { return polkit.Result.YES; }
+});

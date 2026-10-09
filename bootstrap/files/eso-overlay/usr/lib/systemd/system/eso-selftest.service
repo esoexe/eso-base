@@ -1,0 +1,13 @@
+[Unit]
+Description=ESO self-test report on the serial console (only with eso.selftest on the kernel command line)
+ConditionKernelCommandLine=eso.selftest
+After=graphical.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/eso-selftest
+StandardOutput=tty
+TTYPath=/dev/ttyS0
+
+[Install]
+WantedBy=graphical.target

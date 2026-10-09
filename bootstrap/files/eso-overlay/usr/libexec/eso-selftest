@@ -1,0 +1,20 @@
+#!/bin/bash
+# ESO self-test (CI boot test): after the desktop has settled, report memory and what runs, on the serial console.
+sleep "${ESO_SELFTEST_WAIT:-100}"
+pss() { awk '/^Pss:/{s+=$2} END{print s+0}' "/proc/$1/smaps_rollup" 2>/dev/null; }
+echo "ESO-SELFTEST begin $(date -u +%T) uptime=$(cut -d' ' -f1 /proc/uptime)s"
+. /etc/os-release; echo "ESO-SELFTEST os: $PRETTY_NAME | kernel $(uname -r)"
+free -m | awk '/^Mem:/{print "ESO-SELFTEST mem: used " $3 " MiB of " $2 " MiB (available " $7 " MiB)"}'
+total=0; rows=()
+for p in /proc/[0-9]*; do
+    n=${p#/proc/}; c=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null | cut -c1-70); [[ -n $c ]] || continue
+    k=$(pss "$n"); [[ -n $k && $k -gt 0 ]] || continue
+    total=$((total + k)); rows+=("$k $(stat -c %U "$p") $c")
+done
+echo "ESO-SELFTEST pss-total: $((total / 1024)) MiB (all processes)"
+printf '%s\n' "${rows[@]}" | sort -rn | head -15 | awk '{printf "ESO-SELFTEST   %6.1f MiB  %-8s %s\n", $1/1024, $2, substr($0, index($0,$3))}'
+for x in greetd Xorg xfwm4 eso-shell eso-lite-session; do
+    pgrep -f "$x" >/dev/null && echo "ESO-SELFTEST running: $x" || echo "ESO-SELFTEST NOT running: $x"
+done
+systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
+echo "ESO-SELFTEST end"

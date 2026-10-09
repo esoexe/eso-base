@@ -3,7 +3,13 @@
 # Boots on BIOS and UEFI, from a DVD or written raw to a USB stick (hybrid). Everything inside the ISO is ESO's own
 # build (kernel, initramfs, GRUB, systemd ...); the host only packs it (xorriso, mksquashfs, mtools).
 set -euo pipefail
-ESO=${ESO:-/mnt/eso}; ISO=${1:-eso-core-x86_64.iso}; LABEL=ESO_CORE
+# ESO_ISO_EDITION=core (default): ESO Core, root console.  ESO_ISO_EDITION=os: ESO OS with the ESO desktop (stage 6c).
+ESO=${ESO:-/mnt/eso}; ED=${ESO_ISO_EDITION:-core}
+case $ED in
+    core) ISO=${1:-eso-core-x86_64.iso}; LABEL=ESO_CORE; NAME="ESO Core"; SQ=eso-core ;;
+    os)   ISO=${1:-eso-os-x86_64.iso};   LABEL=ESO_OS;   NAME="ESO OS";   SQ=eso-os ;;
+    *)    echo "ESO_ISO_EDITION must be core or os"; exit 1 ;;
+esac
 W=$(mktemp -d)
 # kernel file systems for the chroot steps (eso-mkinitramfs and grub-mkimage need /dev/null, /proc ...)
 mnt() { mkdir -p "$ESO"/{dev,proc,sys,run}; mount --bind /dev "$ESO/dev"; mount -t proc proc "$ESO/proc"
@@ -17,6 +23,7 @@ mkdir -p "$W"/iso/{live,boot/grub}
 # --- live system tweaks (only in the ISO; the disk image keeps its own fstab) ---
 cp "$ESO/etc/fstab" "$W/fstab.disk"
 printf '# ESO Core live: the root is a RAM overlay on the read-only medium (see /run/eso)\n' > "$ESO/etc/fstab"
+if [[ $ED == core ]]; then
 echo eso-core > "$ESO/etc/hostname"
 cat > "$ESO/etc/issue" <<'I'
 
@@ -24,6 +31,7 @@ cat > "$ESO/etc/issue" <<'I'
   Log in as "root" (no password in this test build).
 
 I
+fi
 # initramfs with live support (eso-mkinitramfs knows eso.live)
 mnt
 chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "eso-mkinitramfs '$KV' /boot/initrd.img-$KV" >/dev/null
@@ -37,7 +45,7 @@ umnt
 cp "$ESO/boot/vmlinuz-$KV" "$W/iso/boot/vmlinuz"; cp "$ESO/boot/initrd.img-$KV" "$W/iso/boot/initrd.img"
 
 # --- root filesystem ---
-mksquashfs "$ESO" "$W/iso/live/eso-core.squashfs" -comp zstd -Xcompression-level 19 -noappend -quiet -no-progress \
+mksquashfs "$ESO" "$W/iso/live/$SQ.squashfs" -comp zstd -Xcompression-level 19 -noappend -quiet -no-progress \
     -wildcards -e sources 'proc/*' 'sys/*' 'dev/*' 'run/*' 'tmp/*' 'var/cache/*' 'root/.cache'
 cp "$W/fstab.disk" "$ESO/etc/fstab"
 
@@ -63,16 +71,16 @@ cat > "$W/iso/boot/grub/grub.cfg" <<G
 set timeout=3
 set default=0
 insmod all_video
-menuentry "ESO Core (live)" {
-    linux /boot/vmlinuz eso.live loglevel=3 console=ttyS0,115200 console=tty0
+menuentry "$NAME (live)" {
+    linux /boot/vmlinuz eso.live eso.label=$LABEL loglevel=3 console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
-menuentry "ESO Core (live, safe graphics)" {
-    linux /boot/vmlinuz eso.live loglevel=3 nomodeset console=ttyS0,115200 console=tty0
+menuentry "$NAME (live, safe graphics)" {
+    linux /boot/vmlinuz eso.live eso.label=$LABEL loglevel=3 nomodeset console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
 G
-echo "ESO Core, ESO Base kernel $KV, built $(date -u +%F)" > "$W/iso/eso-core.txt"
+echo "$NAME, ESO Base kernel $KV, built $(date -u +%F)" > "$W/iso/$SQ.txt"
 
 # --- hybrid ISO (DVD + USB, BIOS + UEFI) ---
 xorriso -as mkisofs -r -J -V "$LABEL" -o "$ISO" \

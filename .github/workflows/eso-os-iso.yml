@@ -1,0 +1,113 @@
+name: "ESO OS - live ISO on ESO Base (no Debian), with a recorded boot test"
+on:
+  workflow_run:
+    workflows: ["ESO Base - stage 6c (ESO OS: greetd login + the ESO desktop)"]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  iso:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore ESO Base stage 6c (newest artifact)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          N=eso-base-stage6c-x86_64
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
+               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q s.zip $N.tar.zst $N.tar.zst.sha256 && sha256sum -c $N.tar.zst.sha256
+          sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
+          rm -f s.zip $N.tar.zst*
+          sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
+          df -h /
+      - name: Host packing + test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 ovmf socat ffmpeg >/dev/null
+      - name: Build the ESO OS ISO
+        run: |
+          sudo ESO=/mnt/eso ESO_ISO_EDITION=os bash bootstrap/make-iso.sh eso-os-x86_64.iso
+          sudo chown "$USER" eso-os-x86_64.iso
+          sha256sum eso-os-x86_64.iso | tee eso-os-x86_64.iso.sha256
+      - name: Boot test with screen recording (ESO desktop must come up; RAM report from inside)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+          ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
+          # the ISO's own kernel + initramfs, booted with eso.selftest so the guest reports memory on the serial port
+          xorriso -osirrox on -indev eso-os-x86_64.iso -extract /boot/vmlinuz vmlinuz -extract /boot/initrd.img initrd.img 2>/dev/null
+          mkdir -p frames
+          qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga std -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
+            -append "eso.live eso.label=ESO_OS eso.selftest loglevel=3 console=ttyS0,115200 console=tty0" \
+            -display none -serial file:boot-desktop.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
+          sleep 1
+          for i in $(seq -w 1 120); do          # one frame every 2 s for 4 minutes, from power-on
+            echo "screendump frames/f$i.ppm" | socat - UNIX-CONNECT:mon.sock >/dev/null 2>&1 || true
+            if grep -q "ESO-SELFTEST end" boot-desktop.log 2>/dev/null; then sleep 4; break; fi
+            kill -0 $q 2>/dev/null || break; sleep 2
+          done
+          kill $q 2>/dev/null || true
+          echo "frames: $(ls frames | wc -l)"
+          ffmpeg -loglevel error -y -framerate 4 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -c:v libx264 -crf 26 eso-os-boot.mp4 || true
+          last=$(ls frames/f*.ppm | tail -1); ffmpeg -loglevel error -y -i "$last" eso-os-desktop.png || true
+          for n in 015 030 045 060; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
+          echo "----- ESO self-test (from inside the running ESO OS) -----"
+          grep "ESO-SELFTEST" boot-desktop.log | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' | tee selftest.txt || true
+          # pass = the ESO session runs and the screen is not blank
+          python3 - "$last" <<'PY'
+          import sys
+          d = open(sys.argv[1], "rb").read()
+          parts = d.split(b"\n", 3); w, h = map(int, parts[1].split()); px = parts[3]
+          step = max(1, len(px) // 30000); vals = px[::step]
+          mean = sum(vals) / len(vals); var = sum((v - mean) ** 2 for v in vals) / len(vals)
+          print(f"final frame {w}x{h}: mean {mean:.0f}, spread {var ** 0.5:.0f}")
+          sys.exit(0 if var ** 0.5 > 12 else 1)
+          PY
+          grep -q "ESO-SELFTEST running: eso-lite-session" selftest.txt
+      - name: Boot test (BIOS DVD, UEFI DVD) through ESO's GRUB - must reach the login prompt
+        run: |
+          ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
+          OVMF=$(ls /usr/share/ovmf/OVMF.fd /usr/share/OVMF/OVMF_CODE.fd 2>/dev/null | head -1)
+          boot() {
+            rm -f boot-$1.log
+            qemu-system-x86_64 $ACC -m 3072 -smp 2 $2 -display none -serial file:boot-$1.log -no-reboot & q=$!
+            for i in $(seq 1 120); do
+              if grep -q "login:" boot-$1.log 2>/dev/null; then echo "$1: login prompt after $((i*2)) s"; kill $q; return 0; fi
+              kill -0 $q 2>/dev/null || break; sleep 2
+            done
+            kill $q 2>/dev/null; echo "$1: NO login prompt"; tail -30 boot-$1.log; return 1
+          }
+          ok=0
+          boot bios-dvd "-cdrom eso-os-x86_64.iso" || ok=1
+          boot uefi-dvd "-bios $OVMF -cdrom eso-os-x86_64.iso" || ok=1
+          exit $ok
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eso-os-boot-recording
+          path: |
+            eso-os-boot.mp4
+            eso-os-desktop.png
+            frame-*.png
+            selftest.txt
+            boot-*.log
+          retention-days: 30
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: eso-os-iso-x86_64
+          path: |
+            eso-os-x86_64.iso
+            eso-os-x86_64.iso.sha256
+          retention-days: 30
+          compression-level: 0

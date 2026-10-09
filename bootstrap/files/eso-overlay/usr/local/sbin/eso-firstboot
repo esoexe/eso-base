@@ -1,0 +1,33 @@
+#!/bin/sh
+# ESO OS first boot of an installed system: drop live-only bits, arm ESO Defender.
+set -u
+if [ ! -f /etc/eso/keep-autologin ]; then
+    sed -i '/^# Live USB \/ VM image autologin/,$d' /etc/greetd/config.toml
+    sed -i '/^\[initial_session\]/,$d' /etc/greetd/config.toml
+fi
+rm -f /etc/polkit-1/rules.d/49-eso-live.rules /etc/sudoers.d/eso-live \
+      /usr/share/applications/eso-install.desktop /etc/xdg/autostart/calamares-desktop-icon.desktop
+# ESO 3.1 optional password: a user who left the installer password empty gets the canonical "no password" state
+# (empty shadow field + pam_unix nullok) instead of a hash of "" — sign-in, lock screen and sudo then accept Enter.
+if command -v perl >/dev/null; then
+    getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1}' | while read -r u; do
+        h=$(getent shadow "$u" | cut -d: -f2)
+        case "$h" in ''|'!'*|'*'*) continue ;; esac
+        if perl -e 'exit(crypt("", $ARGV[0]) eq $ARGV[0] ? 0 : 1)' "$h"; then passwd -d "$u" >/dev/null 2>&1; fi
+    done
+fi
+mkdir -p /etc/eso && date -u +%FT%TZ >/etc/eso/firstboot-done
+# ESO Defender: cell bank of this installed system + spare kernel + boot-menu recovery entry, then the guard
+# Runs as its own background unit at idle CPU priority, so the login screen does not wait for it.
+if [ -x /usr/local/bin/eso-defender ]; then
+    systemd-run --no-block --unit=eso-defender-firstboot --description="ESO Defender first-boot cell bank" \
+        -p CPUSchedulingPolicy=idle -p Nice=19 -p IOSchedulingClass=idle /bin/sh -c '
+        sleep 45                                                   # let the desktop settle first
+        /usr/local/bin/eso-defender baseline --no-debs >/var/log/eso-defender-firstboot.log 2>&1
+        command -v update-grub >/dev/null && update-grub >/dev/null 2>&1
+        systemctl start eso-defender.service
+        command -v ufw >/dev/null && /usr/local/bin/eso-defender firewall on >/dev/null 2>&1
+        systemctl start --no-block eso-defender-baseline.service   # offline package bank (needs network)
+        true' >/dev/null 2>&1 || true
+fi
+exit 0

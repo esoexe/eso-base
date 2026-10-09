@@ -1,0 +1,14 @@
+[Unit]
+Description=ESO OS first-boot cleanup (installed systems only)
+ConditionKernelCommandLine=!boot=live
+ConditionKernelCommandLine=!eso.live
+ConditionPathExists=!/etc/eso/firstboot-done
+Before=greetd.service display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/eso-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

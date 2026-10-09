@@ -1,0 +1,3 @@
+# ESO OS: when RAM + swap run out, stop the biggest app instead of freezing the whole desktop.
+# Never kills the desktop itself.
+EARLYOOM_ARGS="-m 4 -s 8 -r 0 --prefer (^|/)(WebKitWebProces|chrome|chromium|firefox|firefox-esr|electron|code|java|node)$ --avoid (^|/)(Xorg|Xwayland|xfwm4|Hyprland|i3|eso-shell|eso-appd|sxhkd|dunst|polybar|waybar|picom|greetd|systemd|sshd|pipewire|wireplumber)$ -n"

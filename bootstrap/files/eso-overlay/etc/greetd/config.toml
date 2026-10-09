@@ -1,0 +1,13 @@
+# ESO OS on ESO Base: greetd login manager with tuigreet. Session: ESO Desktop (X11, xfwm4).
+[terminal]
+vt = 7
+
+[default_session]
+command = "tuigreet --time --remember --asterisks --greeting 'ESO OS' --cmd /usr/local/bin/eso-auto-session"
+user = "greeter"
+
+# Live USB / VM image autologin. Removed on first boot of an installed system (eso-firstboot)
+# unless /etc/eso/keep-autologin exists. Keep this section LAST in the file.
+[initial_session]
+command = "/usr/local/bin/eso-auto-session"
+user = "eso"
