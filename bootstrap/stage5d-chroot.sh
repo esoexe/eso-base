@@ -27,7 +27,7 @@ ms() { local n=$1; shift; step "$n"; unpack "$n" "$(src "$n")"
        quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload "$@"
        quiet ninja -C build; quiet ninja -C build install; done_ "$n"; }
 cm() { local n=$1; shift; step "$n"; unpack "$n" "$(src "$n")"
-       quiet cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_LIBDIR=lib "$@"
+       quiet cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "$@"
        quiet ninja -C build; quiet ninja -C build install; done_ "$n"; }
 export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
 
