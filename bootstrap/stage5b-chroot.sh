@@ -160,8 +160,12 @@ ms polkit -Dman=false -Dsession_tracking=logind -Dtests=false -Dos_type=lfs -Dau
 [[ -f /etc/pam.d/polkit-1 ]] || printf 'auth      include     system-auth\naccount   include     system-account\npassword  include     system-password\nsession   include     system-session\n' > /etc/pam.d/polkit-1
 
 cm jsonc -DBUILD_STATIC_LIBS=OFF -DBUILD_TESTING=OFF
-ms accountsservice -Dadmin_group=sudo -Dvapi=false -Dtests=false -Dintrospection=true -Ddocbook=false -Dgtk_doc=false \
-   -Dsystemdsystemunitdir=$UNITS
+# accountsservice reads its version from git or from an "accountsservice-X.Y.Z" directory name; give it the pinned one
+step accountsservice; unpack accountsservice "$(src accountsservice)"
+printf '#!/bin/sh\necho %s\n' "$V_accountsservice" > generate-version.sh; chmod +x generate-version.sh
+quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Dadmin_group=sudo -Dvapi=false \
+   -Dtests=false -Dintrospection=true -Ddocbook=false -Dgtk_doc=false -Dsystemdsystemunitdir=$UNITS
+quiet ninja -C build; quiet ninja -C build install; done_ accountsservice
 ms libgudev -Dtests=disabled -Dvapi=disabled -Dintrospection=enabled
 ms upower -Dman=false -Dgtk-doc=false -Dintrospection=enabled -Didevice=disabled -Dpolkit=enabled \
    -Dinstalled_tests=false -Dsystemdsystemunitdir=$UNITS
