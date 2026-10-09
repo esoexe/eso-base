@@ -45,7 +45,14 @@ step "SPIR-V LLVM Translator $V_spirvllvm"; unpack spirvllvm "$(basename /source
 quiet cmake -B build $CM -DBUILD_SHARED_LIBS=ON -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/usr \
     -DLLVM_EXTERNAL_LIT=/bin/true -DLLVM_INCLUDE_TESTS=OFF
 quiet ninja -C build; quiet ninja -C build install; done_ spirvllvm
-step "libclc (OpenCL built-ins for Mesa)"; cd /sources/libclc-src
+step "libclc (OpenCL built-ins for Mesa)"
+if [[ ! -d /sources/libclc-src ]]; then          # resumed run: LLVM was already installed, take libclc from its tarball
+    rm -rf /sources/llvm-part; mkdir -p /sources/llvm-part
+    tar -xf "/sources/llvm-project-$V_llvm.src.tar.xz" -C /sources/llvm-part --strip-components=1 \
+        "llvm-project-$V_llvm.src/libclc" "llvm-project-$V_llvm.src/cmake" "llvm-project-$V_llvm.src/llvm/cmake"
+    mv /sources/llvm-part/libclc /sources/libclc-src
+fi
+cd /sources/libclc-src
 quiet cmake -B build $CM -DLIBCLC_TARGETS_TO_BUILD="spirv-mesa3d-;spirv64-mesa3d-"
 quiet ninja -C build; quiet ninja -C build install; cd /sources; rm -rf libclc-src
 step "glslang $V_glslang"; unpack glslang "$(basename /sources/glslang-*.tar.gz)"
