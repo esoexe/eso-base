@@ -15,7 +15,8 @@ step() { echo; echo "=== $* ($(date -u +%H:%M:%S)) ==="; }
 unpack() { rm -rf "/sources/$1"; mkdir -p "/sources/$1"; tar -xf "/sources/$2" -C "/sources/$1" --strip-components=1; cd "/sources/$1"; }
 declare -A PFX=([gstpluginsbase]=gst-plugins-base [gstpluginsgood]=gst-plugins-good [gstpluginsbad]=gst-plugins-bad
                 [gstlibav]=gst-libav)
-src() { local f; f=$(ls /sources/"${PFX[$1]:-$1}"-[0-9v]* 2>/dev/null | grep -E '\.(tar\.(xz|gz|bz2)|tgz)$' | head -1)
+src() { local p="${PFX[$1]:-$1}" f; f=$(ls /sources/"$p"-[0-9v]* 2>/dev/null | grep -E '\.(tar\.(xz|gz|bz2)|tgz)$' | head -1)
+        [[ -n $f ]] || f=$(ls /sources/"$p"-* 2>/dev/null | grep -E "/$p-[0-9a-f]{40}\.tar\.gz$" | head -1)   # git commit archives
         [[ -n $f ]] || { echo "no source tarball for $1" >&2; exit 1; }; basename "$f"; }
 done_() { cd /sources; rm -rf "/sources/$1"; }
 quiet() { "$@" > /tmp/build.log 2>&1 || { tail -80 /tmp/build.log; echo "FAILED: $*"; exit 1; }; }
