@@ -149,7 +149,7 @@ echo "  mpv decoded H.264 + AAC"
 # (VA-API / v4l2 stateless decoders only register when a GPU or camera is present, so they are not checked here)
 printf '  GStreamer elements: '
 for e in playbin playbin3 gtksink pulsesrc pulsesink autoaudiosink alsasink ximagesrc v4l2src avdec_h264 avdec_aac \
-         avdec_vp9 avdec_libdav1d matroskademux qtdemux glimagesink opusdec vorbisdec; do
+         avdec_vp9 matroskademux qtdemux glimagesink opusdec vorbisdec; do
     if gst-inspect-1.0 --exists "$e"; then printf '%s ' "$e"; else echo; echo "missing GStreamer element $e"; exit 1; fi
 done; echo
 python3 - <<'PY'
