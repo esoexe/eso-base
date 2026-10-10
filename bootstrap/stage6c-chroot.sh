@@ -177,7 +177,7 @@ ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manage
 systemctl unmask plymouth-read-write.service systemd-ask-password-plymouth.path >/dev/null 2>&1 || true
 systemctl mask plymouth-start.service plymouth-quit-wait.service plymouth-quit.service plymouth-switch-root.service \
     >/dev/null 2>&1 || true
-install -d /etc/plymouth; printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=3\n' > /etc/plymouth/plymouthd.conf
+install -d /etc/plymouth; printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=8\n' > /etc/plymouth/plymouthd.conf
 [[ -f /usr/share/plymouth/themes/eso/eso.plymouth ]] || echo "  WARNING: ESO plymouth theme missing"
 systemctl set-default graphical.target >/dev/null 2>&1 || ln -sf /usr/lib/systemd/system/graphical.target /etc/systemd/system/default.target
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1 || true

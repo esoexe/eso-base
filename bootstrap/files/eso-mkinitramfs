@@ -57,7 +57,7 @@ if [[ -x /usr/sbin/plymouthd && -x /usr/bin/plymouth && -f /usr/share/plymouth/t
     done
     install -D -m644 /usr/share/plymouth/plymouthd.defaults "$W/usr/share/plymouth/plymouthd.defaults"
     mkdir -p "$W/etc/plymouth"
-    printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=3\n' > "$W/etc/plymouth/plymouthd.conf"
+    printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=8\n' > "$W/etc/plymouth/plymouthd.conf"
     [[ -f /etc/os-release ]] && cp /etc/os-release "$W/etc/os-release"
     cp -a /usr/lib/udev/rules.d/{70-uaccess,71-seat,73-seat-late}.rules "$W/usr/lib/udev/rules.d/" 2>/dev/null || true
     SPLASH=1
@@ -78,7 +78,11 @@ if [[ $splash == 1 && -x /usr/sbin/plymouthd ]]; then
     mkdir -p /run/plymouth /dev/pts; mountpoint -q /dev/pts || mount -t devpts devpts -o gid=5,mode=620 /dev/pts
     plymouthd --mode=boot --attach-to-session --ignore-serial-consoles --pid-file=/run/plymouth/pid && plymouth show-splash || splash=0
 fi
-udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
+udevadm trigger --action=add --type=subsystems
+# the display first: its driver loads before the disks', so the ESO animation (not a text fallback) is the first
+# thing on screen. plymouth waits up to DeviceTimeout for a graphical display before falling back to text.
+udevadm trigger --action=add --subsystem-match=pci --attr-match=class=0x03*; udevadm settle --timeout=5
+udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
 # safety net: the usual disk controllers even if a modalias event was missed (cheap, no-ops when absent)
 for m in virtio_pci virtio_blk virtio_scsi ahci ata_piix nvme sd_mod sr_mod mmc_block sdhci_pci xhci_pci ehci_pci \
          usb_storage uas hv_storvsc vmw_pvscsi mptspi ext4 btrfs xfs vfat; do modprobe -q $m 2>/dev/null; done

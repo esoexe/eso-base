@@ -28,6 +28,10 @@ fi
 # security + boot animation
 echo "ESO-SELFTEST root-account: $(passwd -S root 2>/dev/null | awk '{print $2}') (L = locked)"
 echo "ESO-SELFTEST splash: cmdline=$(grep -qw splash /proc/cmdline && echo splash || echo none) plymouth=$(plymouth --ping 2>/dev/null && echo still-running || echo ended)"
+il=$(ls /run/user/*/eso/intro.log 2>/dev/null | head -n1)
+if [[ -z $il ]]; then echo "ESO-SELFTEST intro: not started"
+elif grep -q Traceback "$il"; then echo "ESO-SELFTEST intro: FAILED: $(tail -n1 "$il")"
+else echo "ESO-SELFTEST intro: played"; fi
 # stage 6d tools that ESO's apps call
 miss=""; for c in which 7z xdg-open xdg-settings xdg-user-dir update-desktop-database brightnessctl playerctl maim slop rg \
     ssh git bluetoothctl powerprofilesctl tesseract iptables ufw clamscan flatpak fusermount3 pw-play pw-record; do
