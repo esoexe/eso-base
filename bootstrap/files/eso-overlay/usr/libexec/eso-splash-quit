@@ -1,0 +1,16 @@
+#!/bin/sh
+# Ends the ESO boot animation (plymouth, started in the initramfs) at the moment the desktop is on screen:
+# Xorg is up and the ESO shell (taskbar/wallpaper) runs. --retain-splash keeps the last animation frame until the
+# desktop has painted over it, so there is no black gap. Without a desktop (rescue, failed login) it gives the
+# screen back to the text console after 25 s.
+command -v plymouth >/dev/null 2>&1 || exit 0
+plymouth --ping 2>/dev/null || exit 0
+i=0
+while [ $i -lt 250 ]; do                       # 25 s in 0.1 s steps
+    if [ -S /tmp/.X11-unix/X0 ] && { pgrep -x eso-shell >/dev/null 2>&1 || pgrep -f "bin/eso-shell( |$)" >/dev/null 2>&1; }; then
+        sleep 0.4; plymouth quit --retain-splash; exit 0
+    fi
+    sleep 0.1; i=$((i + 1))
+done
+if [ -S /tmp/.X11-unix/X0 ]; then plymouth quit --retain-splash; else plymouth quit; fi
+exit 0

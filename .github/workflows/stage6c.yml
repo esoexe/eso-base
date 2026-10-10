@@ -31,6 +31,15 @@ jobs:
           sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
           rm -f s.zip $N.tar.zst*
           df -h /
+      - name: ESO Ultimate test package (encrypted; installed, tested and removed again inside the build)
+        env:
+          K: ${{ secrets.ESO_ULT_KEY }}
+        run: |
+          [ -n "$K" ] || { echo "no ESO_ULT_KEY: Ultimate test skipped"; exit 0; }
+          curl -fsSL -o u.enc https://github.com/${{ github.repository }}/releases/download/sources/eso-ultimate-ci.deb.enc
+          sudo mkdir -p /mnt/eso/sources
+          printf '%s' "$K" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in u.enc -pass stdin | sudo tee /mnt/eso/sources/eso-ultimate.deb >/dev/null
+          rm -f u.enc; ls -la /mnt/eso/sources/eso-ultimate.deb
       - name: Build stage 6c inside the ESO chroot
         run: sudo ESO=/mnt/eso bash bootstrap/stage6c.sh
       - name: Pack

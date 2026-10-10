@@ -32,7 +32,7 @@ jobs:
           sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
           df -h /
       - name: Host packing + test tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 ovmf socat ffmpeg >/dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 qemu-system-gui ovmf socat ffmpeg xvfb >/dev/null
       - name: Build the ESO OS ISO
         run: |
           sudo ESO=/mnt/eso ESO_ISO_EDITION=os bash bootstrap/make-iso.sh eso-os-x86_64.iso
@@ -46,9 +46,15 @@ jobs:
           # the ISO's own kernel + initramfs, booted with eso.selftest so the guest reports memory on the serial port
           xorriso -osirrox on -indev eso-os-x86_64.iso -extract /boot/vmlinuz vmlinuz -extract /boot/initrd.img initrd.img 2>/dev/null
           mkdir -p frames
+          # a real-time screen recording (30 frames/s): QEMU's window on a virtual X screen, captured by ffmpeg
+          Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/dev/null 2>&1 & xv=$!
+          for i in $(seq 50); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+          export DISPLAY=:99 SDL_VIDEO_X11_XRANDR=0
+          ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1280x800 -draw_mouse 0 -i :99.0 \
+            -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p eso-os-boot-raw.mp4 </dev/null & ff=$!
           qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga std -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
-            -append "eso.live eso.label=ESO_OS eso.selftest loglevel=3 console=ttyS0,115200 console=tty0" \
-            -display none -serial file:boot-desktop.log -serial file:selftest-port.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
+            -append "eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
+            -display sdl,show-cursor=off -serial file:boot-desktop.log -serial file:selftest-port.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
           sleep 1
           for i in $(seq -w 1 300); do          # one frame per second for up to 5 minutes, from power-on
             echo "screendump frames/f$i.ppm" | socat - UNIX-CONNECT:mon.sock >/dev/null 2>&1 || true
@@ -56,10 +62,11 @@ jobs:
             kill -0 $q 2>/dev/null || break; sleep 1
           done
           kill $q 2>/dev/null || true
+          sleep 1; kill -INT $ff 2>/dev/null || true; wait $ff 2>/dev/null || true; kill $xv 2>/dev/null || true
           echo "frames: $(ls frames | wc -l)"
-          # real speed (1 frame/s as captured) + a 4x fast version
-          ffmpeg -loglevel error -y -framerate 1 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -r 25 -c:v libx264 -crf 24 eso-os-boot.mp4 || true
-          ffmpeg -loglevel error -y -framerate 4 -pattern_type glob -i 'frames/f*.ppm' -vf "scale=1024:-2,format=yuv420p" -r 25 -c:v libx264 -crf 26 eso-os-boot-4x.mp4 || true
+          # the 30 frames/s recording, re-encoded small for sharing (real speed, nothing sped up or cut)
+          ffmpeg -loglevel error -y -i eso-os-boot-raw.mp4 -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart eso-os-boot.mp4 || cp eso-os-boot-raw.mp4 eso-os-boot.mp4
+          ffprobe -v error -show_entries format=duration:stream=r_frame_rate,width,height -of compact eso-os-boot.mp4 || true
           last=$(ls frames/f*.ppm | tail -1); ffmpeg -loglevel error -y -i "$last" eso-os-desktop.png || true
           for n in 010 030 060 090 120 150; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
           echo "----- ESO self-test (from inside the running ESO OS) -----"
@@ -98,7 +105,6 @@ jobs:
           name: eso-os-boot-recording
           path: |
             eso-os-boot.mp4
-            eso-os-boot-4x.mp4
             eso-os-desktop.png
             frame-*.png
             selftest.txt

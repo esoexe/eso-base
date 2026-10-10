@@ -1,0 +1,12 @@
+[Unit]
+Description=ESO boot animation: hand over to the desktop
+After=greetd.service
+ConditionPathExists=/run/plymouth/pid
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/eso-splash-quit
+TimeoutStartSec=45
+
+[Install]
+WantedBy=multi-user.target

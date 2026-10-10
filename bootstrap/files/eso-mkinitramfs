@@ -16,7 +16,7 @@ copy_bin() {
         [[ -e $W$(readlink -f "$l") ]] || install -D "$(readlink -f "$l")" "$W$(readlink -f "$l")"
     done
 }
-for b in bash sh mount umount mkdir ls cat sed sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck; do
+for b in bash sh mount umount mkdir ls cat sed sleep switch_root blkid findfs kmod modprobe insmod udevadm fsck.ext4 e2fsck mountpoint; do
     p=$(command -v $b || true); [[ -n $p ]] && copy_bin "$(readlink -f "$p")" && { [[ $(readlink -f "$p") == "$p" ]] || cp -a "$p" "$W$p"; } || true
 done
 ln -sf kmod "$W/usr/bin/modprobe" 2>/dev/null || true
@@ -37,16 +37,47 @@ while read -r m; do
         f=${f%% *}; [[ -e $W$f ]] || install -D -m644 "$f" "$W$f"
     done || true
 done
+# VM display drivers (DRM) so the boot animation draws from the first second in QEMU/KVM, VirtualBox, VMware, Hyper-V.
+# Real GPUs (Intel/AMD/NVIDIA) need firmware and load later from the real root; until then plymouth draws on the
+# firmware framebuffer (efifb / vesafb), then moves to the GPU when it appears.
+for n in bochs virtio-gpu qxl vmwgfx vboxvideo cirrus-qemu hyperv_drm; do
+    modprobe -S "$KV" -D "$n" 2>/dev/null | sed -n 's/^insmod //p' | while read -r f; do
+        f=${f%% *}; [[ -e $W$f ]] || install -D -m644 "$f" "$W$f"
+    done || true
+done
+# --- boot splash: plymouth with the ESO theme (images only: no fonts needed) ---
+SPLASH=0
+if [[ -x /usr/sbin/plymouthd && -x /usr/bin/plymouth && -f /usr/share/plymouth/themes/eso/eso.plymouth ]]; then
+    copy_bin /usr/sbin/plymouthd; copy_bin /usr/bin/plymouth
+    for so in script text details renderers/drm renderers/frame-buffer; do
+        [[ -e /usr/lib/plymouth/$so.so ]] && copy_bin "/usr/lib/plymouth/$so.so"
+    done
+    for th in eso text details; do
+        [[ -d /usr/share/plymouth/themes/$th ]] && { mkdir -p "$W/usr/share/plymouth/themes"; cp -a "/usr/share/plymouth/themes/$th" "$W/usr/share/plymouth/themes/"; }
+    done
+    install -D -m644 /usr/share/plymouth/plymouthd.defaults "$W/usr/share/plymouth/plymouthd.defaults"
+    mkdir -p "$W/etc/plymouth"
+    printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=3\n' > "$W/etc/plymouth/plymouthd.conf"
+    [[ -f /etc/os-release ]] && cp /etc/os-release "$W/etc/os-release"
+    cp -a /usr/lib/udev/rules.d/{70-uaccess,71-seat,73-seat-late}.rules "$W/usr/lib/udev/rules.d/" 2>/dev/null || true
+    SPLASH=1
+fi
 depmod -b "$W" "$KV"
 cat > "$W/init" <<'INIT'
 #!/bin/bash
 PATH=/usr/bin:/usr/sbin
 mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev; mount -t tmpfs tmpfs /run
-root= ro=ro init=/usr/lib/systemd/systemd live=0 label=ESO_CORE
+root= ro=ro init=/usr/lib/systemd/systemd live=0 label=ESO_CORE splash=0
 for a in $(cat /proc/cmdline); do
-    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; eso.label=*) label=${a#eso.label=};; esac
+    case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; eso.label=*) label=${a#eso.label=};; splash) splash=1;; nosplash|nomodeset) splash=0; nospl=1;; esac
 done
 /usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
+[[ ${nospl:-0} == 1 ]] && splash=0
+# the ESO boot animation from the first second (plymouth follows the display as udev brings it up below)
+if [[ $splash == 1 && -x /usr/sbin/plymouthd ]]; then
+    mkdir -p /run/plymouth /dev/pts; mountpoint -q /dev/pts || mount -t devpts devpts -o gid=5,mode=620 /dev/pts
+    plymouthd --mode=boot --attach-to-session --ignore-serial-consoles --pid-file=/run/plymouth/pid && plymouth show-splash || splash=0
+fi
 udevadm trigger --action=add --type=subsystems; udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
 # safety net: the usual disk controllers even if a modalias event was missed (cheap, no-ops when absent)
 for m in virtio_pci virtio_blk virtio_scsi ahci ata_piix nvme sd_mod sr_mod mmc_block sdhci_pci xhci_pci ehci_pci \
@@ -57,14 +88,14 @@ if [[ $live == 1 ]]; then
     for m in isofs squashfs overlay loop sr_mod cdrom usb_storage uas; do modprobe -q $m; done
     med=
     for ((i = 0; i < 100; i++)); do med=$(findfs LABEL=$label 2>/dev/null) && break; sleep 0.2; done
-    [[ -n $med ]] || { echo "ESO: live medium (label $label) not found"; exec bash; }
+    [[ -n $med ]] || { echo "ESO: live medium (label $label) not found"; plymouth quit 2>/dev/null; exec bash; }
     mkdir -p /run/eso/{medium,sq,ov}
-    mount -o ro "$med" /run/eso/medium || { echo "ESO: cannot mount $med"; exec bash; }
+    mount -o ro "$med" /run/eso/medium || { echo "ESO: cannot mount $med"; plymouth quit 2>/dev/null; exec bash; }
     sq=$(ls /run/eso/medium/live/*.squashfs 2>/dev/null | sed -n 1p)
-    mount -t squashfs -o loop,ro "$sq" /run/eso/sq || { echo "ESO: cannot mount $sq"; exec bash; }
+    mount -t squashfs -o loop,ro "$sq" /run/eso/sq || { echo "ESO: cannot mount $sq"; plymouth quit 2>/dev/null; exec bash; }
     mount -t tmpfs -o mode=755,size=75% tmpfs /run/eso/ov; mkdir -p /run/eso/ov/{upper,work}
     mount -t overlay overlay -o lowerdir=/run/eso/sq,upperdir=/run/eso/ov/upper,workdir=/run/eso/ov/work /newroot ||
-        { echo "ESO: overlay failed"; exec bash; }
+        { echo "ESO: overlay failed"; plymouth quit 2>/dev/null; exec bash; }
     root=live
 fi
 dev=
@@ -76,9 +107,10 @@ done
 if [[ -z $dev ]]; then
     echo "ESO: root device $root not found"; echo "partitions:"; cat /proc/partitions
     echo "modules loaded: $(wc -l < /proc/modules)"; blkid 2>&1 | head -10
-    exec bash
+    plymouth quit 2>/dev/null; exec bash
 fi
-[[ $live == 1 ]] || mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; exec bash; }
+[[ $live == 1 ]] || mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; plymouth quit 2>/dev/null; exec bash; }
+[[ $splash == 1 ]] && plymouth update-root-fs --new-root-dir=/newroot 2>/dev/null
 udevadm control --exit
 mount --move /run /newroot/run 2>/dev/null; mount --move /dev /newroot/dev 2>/dev/null
 umount /sys /proc

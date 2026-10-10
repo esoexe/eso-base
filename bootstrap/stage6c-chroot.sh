@@ -152,6 +152,14 @@ printf '[Settings]\ngtk-theme-name=ESO-Metal\ngtk-icon-theme-name=ESO-Metal\ngtk
 # live user "eso": no password (autologin; sudo without password only in the live system, see /etc/sudoers.d/eso-live)
 id eso >/dev/null 2>&1 || useradd -m -s /usr/bin/zsh -c "ESO Live" -G sudo,audio,video,input,render,netdev eso
 passwd -d eso >/dev/null
+# root is LOCKED: nobody can log in as root (console, serial, su). Administration goes through sudo from the user's
+# own account (the live user "eso"; on an installed system the account made at first start, group "sudo").
+passwd -l root >/dev/null
+[[ $(passwd -S root | awk '{print $2}') == L ]] || { echo "FAILED: root account not locked"; exit 1; }
+# stage 6d services: Bluetooth (starts only when an adapter exists), power profiles (Ultra), VM display agent
+for u in bluetooth power-profiles-daemon spice-vdagentd eso-splash-quit; do
+    [[ -e /usr/lib/systemd/system/$u.service ]] && { systemctl enable "$u.service" >/dev/null 2>&1 || echo "  WARNING: enable $u failed"; }
+done
 for u in greetd eso-firstboot eso-zram eso-selftest eso-selftest-console NetworkManager earlyoom; do
     systemctl enable "$u.service" >/tmp/en.log 2>&1 || { echo "  WARNING: systemctl enable $u failed:"; cat /tmp/en.log; }
 done
@@ -163,10 +171,14 @@ systemctl disable systemd-networkd.service systemd-networkd.socket systemd-netwo
 rm -f /etc/systemd/system/*.wants/systemd-networkd*.service /etc/systemd/system/*.wants/systemd-networkd.socket
 for d in /etc/systemd/system/*.wants; do echo "  ${d##*/}: $(ls "$d" | tr '\n' ' ')"; done
 ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
-# Plymouth is not in the initramfs yet: its late start in the real root leaves "plymouth --wait" holding the boot
-# (graphical.target never reached). Off until it is wired into the initramfs; ESO's intro animates the sign-in.
-systemctl mask plymouth-start.service plymouth-quit-wait.service plymouth-quit.service plymouth-read-write.service \
-    plymouth-switch-root.service systemd-ask-password-plymouth.path >/dev/null 2>&1 || true
+# Boot animation: plymouth starts in the initramfs (eso-mkinitramfs, kernel option "splash") and keeps running into
+# the real root. Not started a second time there (plymouth-start), and not ended by plymouth-quit(-wait), which would
+# stop it before the desktop and hold boot jobs: greetd deactivates it, eso-splash-quit ends it on the desktop.
+systemctl unmask plymouth-read-write.service systemd-ask-password-plymouth.path >/dev/null 2>&1 || true
+systemctl mask plymouth-start.service plymouth-quit-wait.service plymouth-quit.service plymouth-switch-root.service \
+    >/dev/null 2>&1 || true
+install -d /etc/plymouth; printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=3\n' > /etc/plymouth/plymouthd.conf
+[[ -f /usr/share/plymouth/themes/eso/eso.plymouth ]] || echo "  WARNING: ESO plymouth theme missing"
 systemctl set-default graphical.target >/dev/null 2>&1 || ln -sf /usr/lib/systemd/system/graphical.target /etc/systemd/system/default.target
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1 || true
 for s in "$SRC/system/tune/install-tune.sh" "$SRC/system/account/install-account.sh" "$SRC/system/tune/slim-services.sh"; do
@@ -212,6 +224,30 @@ if command -v Xvfb >/dev/null; then
         if [[ $rc -eq 124 ]] && ! grep -q "Traceback" /tmp/app.log; then echo "  $app: running after 25 s, no errors"
         else echo "  $app: exit $rc"; tail -25 /tmp/app.log; bad=1; fi
     done
+    # ESO Ultimate on ESO Base (CI only, from an encrypted copy): install it with ESO's own installer, start every
+    # Ultimate app, then remove it again: the image stays ESO Standard (Ultimate arrives with an activation key).
+    if [[ -s /sources/eso-ultimate.deb ]]; then
+        step "ESO Ultimate on ESO Base: install, start each app, remove"
+        if ESO_BASE_PKG=1 python3 /usr/share/eso/src/lib/eso/esobasepkg.py install-local /sources/eso-ultimate.deb > /tmp/ult.log 2>&1; then
+            tail -1 /tmp/ult.log
+            for app in ilyass eso-sheets eso-slides eso-studio eso-nano eso-defender; do
+                f=/usr/local/bin/$app
+                if grep -q ESO-ULTIMATE-STUB "$f" 2>/dev/null; then echo "  $app: still the Standard stub"; bad=1; continue; fi
+                # the license check answers "activated" for this test run only (the app runs as on an activated PC)
+                rc=0; asuser eso dbus-run-session -- timeout 20 python3 -c 'import runpy, sys
+sys.path.insert(0, "/usr/local/lib/eso")
+import esolicense; esolicense._cache = True
+sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name="__main__")' "$f" > /tmp/app.log 2>&1 || rc=$?
+                if [[ $rc -eq 124 || $rc -eq 0 ]] && ! grep -q "Traceback" /tmp/app.log; then echo "  $app (Ultimate): starts on ESO Base"
+                else echo "  $app (Ultimate): exit $rc"; tail -20 /tmp/app.log; bad=1; fi
+            done
+            command -v clamscan >/dev/null && command -v ufw >/dev/null && echo "  Defender tools: clamscan + ufw present"
+        else tail -30 /tmp/ult.log; echo "  eso-ultimate did not install"; bad=1; fi
+        ESO_BASE_PKG=1 python3 /usr/share/eso/src/lib/eso/esobasepkg.py remove eso-ultimate > /tmp/ult.log 2>&1 || { tail -20 /tmp/ult.log; bad=1; }
+        rm -f /sources/eso-ultimate.deb
+        grep -q ESO-ULTIMATE-STUB /usr/local/bin/ilyass && [[ ! -e /var/lib/eso/pkgs/eso-ultimate.control ]] \
+            && echo "  removed again: the image is ESO Standard" || { echo "  FAILED: Ultimate files left in the image"; bad=1; }
+    fi
     kill $XP 2>/dev/null || true; rm -rf /tmp/xdg-eso /tmp/.X11-unix/X12 /tmp/.X12-lock
     rm -rf /home/eso/.cache; chown -R eso: /home/eso
     [[ $bad = 0 ]] || { echo "FAILED: an ESO app did not start"; exit 1; }

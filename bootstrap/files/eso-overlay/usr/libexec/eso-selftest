@@ -25,6 +25,39 @@ if [[ -x /usr/local/libexec/eso-update ]]; then
     echo "ESO-SELFTEST update-check: ${u:0:300}"
     echo "ESO-SELFTEST eso-packages: $(cd /var/lib/eso/pkgs 2>/dev/null && for f in *.control; do printf '%s=%s ' "${f%.control}" "$(sed -n 's/^Version: //p' "$f")"; done)"
 fi
+# security + boot animation
+echo "ESO-SELFTEST root-account: $(passwd -S root 2>/dev/null | awk '{print $2}') (L = locked)"
+echo "ESO-SELFTEST splash: cmdline=$(grep -qw splash /proc/cmdline && echo splash || echo none) plymouth=$(plymouth --ping 2>/dev/null && echo still-running || echo ended)"
+# stage 6d tools that ESO's apps call
+miss=""; for c in which 7z xdg-open xdg-settings xdg-user-dir update-desktop-database brightnessctl playerctl maim slop rg \
+    ssh git bluetoothctl powerprofilesctl tesseract iptables ufw clamscan flatpak fusermount3 pw-play pw-record; do
+    command -v "$c" >/dev/null 2>&1 || miss="$miss $c"; done
+echo "ESO-SELFTEST tools-missing:${miss:- none}"
+echo "ESO-SELFTEST flatpak: $(flatpak --version 2>/dev/null) remotes: $(ls /etc/flatpak/remotes.d 2>/dev/null | tr '\n' ' ')"
+echo "ESO-SELFTEST mpv-vulkan: libplacebo+glslang=$(ldd /usr/lib/libplacebo.so 2>/dev/null | grep -c glslang) vo: $(mpv --vo=help 2>/dev/null | grep -oE '^ +(gpu-next|gpu) ' | tr -d ' ' | tr '\n' ' ')"
+echo "ESO-SELFTEST ocr: $(tesseract --list-langs 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+# app launch speed: each app started like the Start menu does, timed until its window is on screen, then closed
+export DISPLAY=:0 XAUTHORITY=/home/eso/.Xauthority
+asuser() { python3 -c 'import os,pwd,sys
+p=pwd.getpwnam("eso"); os.initgroups(p.pw_name,p.pw_gid); os.setgid(p.pw_gid); os.setuid(p.pw_uid)
+os.environ.update(HOME=p.pw_dir,USER=p.pw_name,LOGNAME=p.pw_name,XDG_RUNTIME_DIR="/run/user/%d" % p.pw_uid,
+  DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/%d/bus" % p.pw_uid,
+  PATH=p.pw_dir+"/.local/bin:/usr/local/bin:/usr/bin:/usr/sbin")
+os.execvp(sys.argv[1],sys.argv[1:])' "$@"; }
+wins() { wmctrl -l 2>/dev/null | awk '{print $1}' | sort; }
+if [[ -S /tmp/.X11-unix/X0 ]] && command -v wmctrl >/dev/null; then
+    for app in eso-files eso-settings eso-notepad eso-taskmgr eso-calc eso-browser; do
+        before=$(wins); t0=$(date +%s%N); asuser "$app" >/dev/null 2>&1 & id=""
+        for i in $(seq 1 200); do
+            sleep 0.05; id=$(comm -13 <(echo "$before") <(wins) | head -1); [[ -n $id ]] && break
+        done
+        t1=$(date +%s%N)
+        if [[ -n $id ]]; then echo "ESO-SELFTEST app-launch: $app window after $(( (t1 - t0) / 1000000 )) ms"
+            sleep 2; wmctrl -ic "$id" 2>/dev/null; sleep 1
+        else echo "ESO-SELFTEST app-launch: $app NO window within 10 s"; fi
+    done
+    free -m | awk '/^Mem:/{print "ESO-SELFTEST mem-after-apps: used " $3 " MiB (available " $7 " MiB)"}'
+fi
 echo "ESO-SELFTEST system-state: $(systemctl is-system-running 2>/dev/null)"
 systemctl list-jobs --no-legend --plain 2>/dev/null | head -10 | sed 's/^/ESO-SELFTEST waiting-job: /'
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
