@@ -22,5 +22,7 @@ if [[ -x /usr/local/libexec/eso-update ]]; then
     echo "ESO-SELFTEST update-check: ${u:0:300}"
     echo "ESO-SELFTEST eso-packages: $(cd /var/lib/eso/pkgs 2>/dev/null && for f in *.control; do printf '%s=%s ' "${f%.control}" "$(sed -n 's/^Version: //p' "$f")"; done)"
 fi
+echo "ESO-SELFTEST system-state: $(systemctl is-system-running 2>/dev/null)"
+systemctl list-jobs --no-legend --plain 2>/dev/null | head -10 | sed 's/^/ESO-SELFTEST waiting-job: /'
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
 echo "ESO-SELFTEST end"

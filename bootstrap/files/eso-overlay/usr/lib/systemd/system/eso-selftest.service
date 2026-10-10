@@ -1,7 +1,8 @@
 [Unit]
 Description=ESO self-test report on the serial console (only with eso.selftest on the kernel command line)
 ConditionKernelCommandLine=eso.selftest
-After=graphical.target
+# not After=graphical.target: one stuck boot job would keep the report from ever appearing (the script waits itself)
+After=greetd.service
 
 [Service]
 Type=simple
@@ -10,4 +11,4 @@ StandardOutput=tty
 TTYPath=/dev/ttyS0
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target

@@ -155,6 +155,10 @@ passwd -d eso >/dev/null
 systemctl enable greetd.service eso-firstboot.service eso-zram.service eso-selftest.service NetworkManager.service earlyoom.service \
     >/dev/null 2>&1 || true
 ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
+# Plymouth is not in the initramfs yet: its late start in the real root leaves "plymouth --wait" holding the boot
+# (graphical.target never reached). Off until it is wired into the initramfs; ESO's intro animates the sign-in.
+systemctl mask plymouth-start.service plymouth-quit-wait.service plymouth-quit.service plymouth-read-write.service \
+    plymouth-switch-root.service systemd-ask-password-plymouth.path >/dev/null 2>&1 || true
 systemctl set-default graphical.target >/dev/null 2>&1 || ln -sf /usr/lib/systemd/system/graphical.target /etc/systemd/system/default.target
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1 || true
 for s in "$SRC/system/tune/install-tune.sh" "$SRC/system/account/install-account.sh" "$SRC/system/tune/slim-services.sh"; do
