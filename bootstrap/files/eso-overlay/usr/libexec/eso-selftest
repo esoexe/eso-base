@@ -1,6 +1,9 @@
 #!/bin/bash
 # ESO self-test (CI boot test): after the desktop has settled, report memory and what runs, on the serial console.
 sleep "${ESO_SELFTEST_WAIT:-100}"
+# the serial login (agetty) hangs up ttyS0 at start, which kills descriptors opened earlier: build the report in a
+# file, then open the ports only now. ttyS1 is a second port that nothing else uses (the CI test gives QEMU two).
+report() {
 pss() { awk '/^Pss:/{s+=$2} END{print s+0}' "/proc/$1/smaps_rollup" 2>/dev/null; }
 echo "ESO-SELFTEST begin $(date -u +%T) uptime=$(cut -d' ' -f1 /proc/uptime)s"
 . /etc/os-release; echo "ESO-SELFTEST os: $PRETTY_NAME | kernel $(uname -r)"
@@ -26,3 +29,7 @@ echo "ESO-SELFTEST system-state: $(systemctl is-system-running 2>/dev/null)"
 systemctl list-jobs --no-legend --plain 2>/dev/null | head -10 | sed 's/^/ESO-SELFTEST waiting-job: /'
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
 echo "ESO-SELFTEST end"
+}
+report > /run/eso-selftest.txt 2>&1
+for t in /dev/ttyS1 /dev/ttyS0; do cat /run/eso-selftest.txt > "$t" 2>/dev/null || true; done
+cat /run/eso-selftest.txt

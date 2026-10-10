@@ -7,8 +7,7 @@ After=greetd.service
 [Service]
 Type=simple
 ExecStart=/usr/libexec/eso-selftest
-StandardOutput=tty
-TTYPath=/dev/ttyS0
+StandardOutput=journal
 
 [Install]
 WantedBy=multi-user.target

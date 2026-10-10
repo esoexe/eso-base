@@ -48,11 +48,11 @@ jobs:
           mkdir -p frames
           qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga std -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS eso.selftest loglevel=3 console=ttyS0,115200 console=tty0" \
-            -display none -serial file:boot-desktop.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
+            -display none -serial file:boot-desktop.log -serial file:selftest-port.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
           sleep 1
           for i in $(seq -w 1 300); do          # one frame per second for up to 5 minutes, from power-on
             echo "screendump frames/f$i.ppm" | socat - UNIX-CONNECT:mon.sock >/dev/null 2>&1 || true
-            if grep -q "ESO-SELFTEST end" boot-desktop.log 2>/dev/null; then sleep 4; break; fi
+            if grep -qa "ESO-SELFTEST end" selftest-port.log boot-desktop.log 2>/dev/null; then sleep 4; break; fi
             kill -0 $q 2>/dev/null || break; sleep 1
           done
           kill $q 2>/dev/null || true
@@ -63,7 +63,7 @@ jobs:
           last=$(ls frames/f*.ppm | tail -1); ffmpeg -loglevel error -y -i "$last" eso-os-desktop.png || true
           for n in 010 030 060 090 120 150; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
           echo "----- ESO self-test (from inside the running ESO OS) -----"
-          grep "ESO-SELFTEST" boot-desktop.log | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' | tee selftest.txt || true
+          { grep -a "ESO-SELFTEST" selftest-port.log 2>/dev/null || grep -a "ESO-SELFTEST" boot-desktop.log; } | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' | tee selftest.txt || true
           # pass = the ESO session runs and the screen is not blank
           python3 - "$last" <<'PY'
           import sys
