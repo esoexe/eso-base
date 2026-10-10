@@ -61,7 +61,7 @@ PY
 
 step "ESO system config (overlay, PAM, zram, X)"
 cp -a /sources/files/eso-overlay/. /
-chmod 755 /usr/local/sbin/eso-firstboot /usr/libexec/eso-zram /usr/libexec/eso-selftest; chmod 440 /etc/sudoers.d/eso-live
+chmod 755 /usr/local/sbin/eso-firstboot /usr/libexec/eso-zram /usr/libexec/eso-selftest /usr/libexec/eso-splash-quit; chmod 440 /etc/sudoers.d/eso-live
 chown -R root:root /etc/sudoers.d /etc/polkit-1/rules.d
 # the PAM names ESO's apps use (Debian's), mapped onto ESO Base's stack; nullok = ESO's optional password works
 cat > /etc/pam.d/common-auth <<'EOF'
