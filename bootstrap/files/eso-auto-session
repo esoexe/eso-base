@@ -1,0 +1,25 @@
+#!/bin/sh
+# ESO — start the right session (live/VM autologin and the greeter default).
+#   ESO Desktop (default, X11 + xfwm4): Windows-style windows — title bars, minimize/maximize/close, resize, snap,
+#                overlapping windows, Always on top.  Light on every PC and VM.
+#   ESO Tiling  (Hyprland/Wayland, blur + animations): opt-in for keyboard-tiling fans; needs a real GPU driver.
+# Choose: Settings → Personalize → Session, the greeter's session list, kernel cmdline eso.full / eso.lite,
+#   or "full"/"lite" in ~/.config/eso/session or /etc/eso/session.  If Hyprland fails to start (no GPU driver) ESO Desktop starts instead.
+# Flatpak apps (ESO Store installs, the built-in games) belong in Start, search and "Open with"
+case ":${XDG_DATA_DIRS:-}:" in
+    *:/var/lib/flatpak/exports/share:*) ;;
+    *) export XDG_DATA_DIRS="$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+esac
+# -noreset: X must not reset when its last client disconnects. At session start the wallpaper painter is the only
+# client; without it the server wiped the root (and early settings) back to black the moment it exited.
+lite() { exec startx /usr/local/bin/eso-lite-session -- -keeptty -noreset -background none >"${XDG_RUNTIME_DIR:-/tmp}/eso-lite-x.log" 2>&1; }
+pref=$(cat "$HOME/.config/eso/session" /etc/eso/session 2>/dev/null | head -n 1)
+grep -qw eso.lite /proc/cmdline && pref=lite
+grep -qw eso.full /proc/cmdline && pref=full
+[ "$pref" = full ] || lite
+start=$(date +%s)
+/usr/local/bin/eso-hyprland-session
+rc=$?
+# Hyprland died within 20 s (driver trouble) → ESO Desktop, so the user always gets a desktop
+if [ $(( $(date +%s) - start )) -lt 20 ] && [ "$rc" -ne 0 ]; then lite; fi
+exit "$rc"

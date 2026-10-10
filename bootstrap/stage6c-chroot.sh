@@ -127,6 +127,7 @@ rm -rf "$D"; tail -1 /tmp/deploy.log
 echo "  deployed: $(ls /usr/local/bin | wc -l) programs, $(ls /usr/local/lib/eso | wc -l) modules"
 # the session from eso-desktop 3.12.2: the wallpaper is painted first, so no black screen after the boot animation
 grep -q screen_size /usr/local/bin/eso-lite-session || install -m755 /sources/files/eso-lite-session /usr/local/bin/eso-lite-session
+grep -q noreset /usr/local/bin/eso-auto-session || install -m755 /sources/files/eso-auto-session /usr/local/bin/eso-auto-session
 step "PAM: ESO's service files in ESO Base syntax, then a real password test (as ESO Lock does it)"
 # upstream Linux-PAM does not know Debian's "@include FILE" (the whole service fails): rewrite any that a package left
 for f in /etc/pam.d/*; do
@@ -286,7 +287,7 @@ print('  ESO', esoui.VERSION, 'Python modules import on ESO Base')"
 if command -v Xvfb >/dev/null; then
     export DISPLAY=:12 XDG_RUNTIME_DIR=/tmp/xdg-eso; mkdir -p -m700 $XDG_RUNTIME_DIR; chown eso: $XDG_RUNTIME_DIR
     export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1
-    Xvfb :12 -screen 0 1280x800x24 -nolisten tcp > /tmp/xvfb.log 2>&1 & XP=$!
+    Xvfb :12 -screen 0 1280x800x24 -nolisten tcp -noreset > /tmp/xvfb.log 2>&1 & XP=$!
     for i in $(seq 50); do [[ -S /tmp/.X11-unix/X12 ]] && break; sleep 0.2; done
     bad=0
     # eso-rootpaint on a real X server: the root window must show exactly the decoded wallpaper
