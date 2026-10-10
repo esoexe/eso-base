@@ -53,7 +53,7 @@ jobs:
           ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1280x800 -draw_mouse 0 -i :99.0 \
             -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p eso-os-boot-raw.mp4 </dev/null & ff=$!
           qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga std -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
-            -append "eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 plymouth.debug=stream:/dev/ttyS0 console=ttyS0,115200 console=tty0" \
+            -append "eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
             -display sdl,show-cursor=off -serial file:boot-desktop.log -serial file:selftest-port.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
           sleep 1
           for i in $(seq -w 1 300); do          # one frame per second for up to 5 minutes, from power-on

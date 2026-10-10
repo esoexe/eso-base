@@ -49,13 +49,25 @@ done
 SPLASH=0
 if [[ -x /usr/sbin/plymouthd && -x /usr/bin/plymouth && -f /usr/share/plymouth/themes/eso/eso.plymouth ]]; then
     copy_bin /usr/sbin/plymouthd; copy_bin /usr/bin/plymouth
-    for so in script text details renderers/drm renderers/frame-buffer; do
+    for so in script text details label-freetype renderers/drm renderers/frame-buffer; do
         [[ -e /usr/lib/plymouth/$so.so ]] && copy_bin "/usr/lib/plymouth/$so.so"
     done
     for th in eso text details; do
         [[ -d /usr/share/plymouth/themes/$th ]] && { mkdir -p "$W/usr/share/plymouth/themes"; cp -a "/usr/share/plymouth/themes/$th" "$W/usr/share/plymouth/themes/"; }
     done
     install -D -m644 /usr/share/plymouth/plymouthd.defaults "$W/usr/share/plymouth/plymouthd.defaults"
+    # plymouth's script plugin crashes at start when no monospace font can be loaded (its console viewer): the
+    # fonts label-freetype looks for, under the names it looks for (DejaVu; fontconfig's choice as a fallback)
+    pfont() {
+        local f=/usr/share/fonts/dejavu/$1
+        [[ -f $f ]] || f=$(fc-match -f '%{file}' "$2" 2>/dev/null)
+        [[ -f $f ]] && install -D -m644 "$f" "$W/usr/share/fonts/$3"
+    }
+    pfont DejaVuSansMono.ttf monospace Plymouth-monospace.ttf
+    pfont DejaVuSansMono-Bold.ttf monospace:weight=bold Plymouth-monospace-bold.ttf
+    pfont DejaVuSans.ttf sans Plymouth.ttf
+    pfont DejaVuSans-Bold.ttf sans:weight=bold Plymouth-bold.ttf
+    [[ -f $W/usr/share/fonts/Plymouth-monospace.ttf ]] || echo "eso-mkinitramfs: WARNING: no monospace font for the boot animation" >&2
     mkdir -p "$W/etc/plymouth"
     printf '[Daemon]\nTheme=eso\nShowDelay=0\nDeviceTimeout=8\n' > "$W/etc/plymouth/plymouthd.conf"
     [[ -f /etc/os-release ]] && cp /etc/os-release "$W/etc/os-release"
