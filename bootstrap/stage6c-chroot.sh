@@ -125,6 +125,8 @@ ESO_BASE_PKG=1 python3 "$D/usr/share/eso/src/lib/eso/esobasepkg.py" install-loca
     > /tmp/deploy.log 2>&1 || { tail -40 /tmp/deploy.log; echo "FAILED: installing eso-desktop"; exit 1; }
 rm -rf "$D"; tail -1 /tmp/deploy.log
 echo "  deployed: $(ls /usr/local/bin | wc -l) programs, $(ls /usr/local/lib/eso | wc -l) modules"
+# the session from eso-desktop 3.12.2: the wallpaper is painted first, so no black screen after the boot animation
+grep -q screen_size /usr/local/bin/eso-lite-session || install -m755 /sources/files/eso-lite-session /usr/local/bin/eso-lite-session
 step "PAM: ESO's service files in ESO Base syntax, then a real password test (as ESO Lock does it)"
 # upstream Linux-PAM does not know Debian's "@include FILE" (the whole service fails): rewrite any that a package left
 for f in /etc/pam.d/*; do
@@ -287,6 +289,29 @@ if command -v Xvfb >/dev/null; then
     Xvfb :12 -screen 0 1280x800x24 -nolisten tcp > /tmp/xvfb.log 2>&1 & XP=$!
     for i in $(seq 50); do [[ -S /tmp/.X11-unix/X12 ]] && break; sleep 0.2; done
     bad=0
+    # eso-rootpaint on a real X server: the root window must show exactly the decoded wallpaper
+    wp=$(ls /etc/skel/.local/share/eso/wallpapers/*-1080p.jpg 2>/dev/null | head -n1)
+    if [[ -n $wp ]]; then
+        eso-rootpaint --test /tmp/rp.ppm 1280 800 "$wp" >/dev/null
+        t0=$(date +%s%N); asuser eso eso-rootpaint --zoom "$wp" || bad=1; t1=$(date +%s%N)
+        python3 - "$(( (t1 - t0) / 1000000 ))" <<'PYEOF' || bad=1
+import sys, gi
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk
+w = Gdk.get_default_root_window()
+pb = Gdk.pixbuf_get_from_window(w, 0, 0, 1280, 800)
+ppm = open("/tmp/rp.ppm", "rb").read()
+body = ppm[ppm.index(b"255\n") + 4:]
+px, rs, n = pb.get_pixels(), pb.get_rowstride(), pb.get_n_channels()
+diff = 0
+for (x, y) in [(10, 10), (640, 400), (300, 700), (1000, 750), (1270, 790)]:
+    a = px[y * rs + x * n: y * rs + x * n + 3]; b = body[(y * 1280 + x) * 3: (y * 1280 + x) * 3 + 3]
+    diff = max(diff, max(abs(a[i] - b[i]) for i in range(3)))
+print(f"  eso-rootpaint on X: wallpaper on the root window in {sys.argv[1]} ms, max pixel difference {diff}")
+sys.exit(0 if diff <= 2 else 1)
+PYEOF
+        rm -f /tmp/rp.ppm
+    fi
     for app in eso-settings eso-browser; do
         rc=0; asuser eso dbus-run-session -- timeout 25 "/usr/local/bin/$app" > /tmp/app.log 2>&1 || rc=$?
         if [[ $rc -eq 124 ]] && ! grep -q "Traceback" /tmp/app.log; then echo "  $app: running after 25 s, no errors"

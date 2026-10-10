@@ -1,0 +1,72 @@
+#!/bin/sh
+# ESO Desktop — the default X11 session (Windows-style windows). Installed to /usr/local/bin.
+#   Window manager: xfwm4 — title bars with minimize / maximize / close, double-click = maximize, resize from any
+#   edge, drag to a screen edge = snap, overlapping windows, "Always on top".  picom draws shadows/rounding/animations.
+#   Keys: sxhkd (apps, familiar layout) + xfwm4 (window keys); a lone tap of the Windows key opens Start (xcape).
+#   ESO_WM=i3 (env, or "i3" in ~/.config/eso/wm) starts the old i3 tiling layout instead.
+export XDG_CURRENT_DESKTOP=ESO XDG_SESSION_DESKTOP=eso ESO_SESSION=lite
+# No fill here: X starts with "-background none" on the boot animation's console, so the animation's last frame stays
+# on screen until the wallpaper is drawn over it (no black or solid-colour flash between boot and desktop).
+# ESO's per-user programs live in ~/.local/bin; greeters (greetd) start sessions with a short system PATH
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+# The wallpaper is the very first thing drawn (a few ms with eso-rootpaint / xwallpaper / feh): no black screen after
+# the boot animation. Painted again below only if eso-display changes the resolution.
+wallpaper() { [ -x "$HOME/.local/bin/eso-wallpaper" ] && ESO_SESSION=lite "$HOME/.local/bin/eso-wallpaper" >/dev/null 2>&1; }
+screen_size() { xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p' | head -n 1; }
+wallpaper; size0=$(screen_size)
+# The desktop starts by itself (eso-session@USER): an account with a password opens behind ESO Lock, which is the
+# sign-in screen. It starts before anything else draws.
+if [ "${ESO_LOCK_AT_START:-0}" = 1 ]; then
+    ESO_LOCK_REASON=signin eso-lock >/dev/null 2>&1 &
+fi
+# Flatpak apps (ESO Store installs, the built-in games) belong in Start, search and "Open with"
+case ":${XDG_DATA_DIRS:-}:" in
+    *:/var/lib/flatpak/exports/share:*) ;;
+    *) export XDG_DATA_DIRS="$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" ;;
+esac
+# glibc: fewer per-thread heaps and freed memory goes back to the system (image/video buffers made long
+# sessions grow by tens of MB per app); disables the dynamic threshold that kept big freed blocks
+export MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072
+export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
+export GDK_GL=disable              # GTK apps skip loading Mesa/LLVM (~45 MB and ~150 ms each)
+export GDK_SCALE=1 GDK_DPI_SCALE=1 QT_SCALE_FACTOR=1 QT_AUTO_SCREEN_SCALE_FACTOR=0 QT_ENABLE_HIGHDPI_SCALING=0
+export MOZ_USE_XINPUT2=1           # smooth scrolling + low-latency input in Firefox
+# snappy keyboard: repeat starts after 220 ms, 40 chars/s; no X screensaver blanking fights
+xset r rate 220 40 2>/dev/null
+xset s off 2>/dev/null
+# 100 % scale + best resolution for the attached monitor BEFORE anything draws
+command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1
+[ "$(screen_size)" = "$size0" ] || wallpaper
+WM=${ESO_WM:-$(head -n 1 "$HOME/.config/eso/wm" 2>/dev/null)}
+if [ "$WM" = i3 ] || ! command -v xfwm4 >/dev/null 2>&1; then
+    export XDG_CURRENT_DESKTOP=ESO:i3 ESO_WM=i3
+    exec i3 -c "$HOME/.config/i3/config"
+fi
+export ESO_WM=xfwm4
+RUN="${XDG_RUNTIME_DIR:-/tmp}/eso"; mkdir -p "$RUN"; rm -f "$RUN/logout"
+# the ESO intro covers the desktop while it loads (skippable; Settings → Personalize → Intro at sign-in)
+rm -f "$RUN/shell-ready"
+command -v eso-intro >/dev/null 2>&1 && eso-intro >"$RUN/intro.log" 2>&1 &
+# a session D-Bus (xfwm4 reads its settings through xfconf); normally systemd --user already provides one
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    if [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    elif command -v dbus-launch >/dev/null 2>&1; then eval "$(dbus-launch --sh-syntax --exit-with-session)"; fi
+fi
+command -v dbus-update-activation-environment >/dev/null 2>&1 &&
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP ESO_SESSION ESO_WM XDG_DATA_DIRS >/dev/null 2>&1
+command -v sxhkd >/dev/null 2>&1 && SXHKD_SHELL="$(command -v eso-sxhkd-sh || echo /bin/sh)" sxhkd -c "$HOME/.config/sxhkd/sxhkdrc" >/dev/null 2>&1 &
+if command -v eso-supertap >/dev/null 2>&1; then eso-supertap >/dev/null 2>&1 &      # ESO Base: built-in lone-Super-tap = Start
+elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|Escape;Super_R=Control_L|Escape' >/dev/null 2>&1; fi
+( sleep 0.3; "$HOME/.local/bin/eso-theme-apply" >/dev/null 2>&1; exec "$HOME/.local/bin/eso-autostart" ) &
+# The session lives as long as the window manager.  If xfwm4 ever crashes it comes straight back
+# (windows keep running); eso-logout writes $RUN/logout first, so a real "Sign out" ends the loop.
+fails=0
+while :; do
+    t0=$(date +%s)
+    xfwm4 --replace --compositor=off --sm-client-disable >/dev/null 2>&1
+    [ -e "$RUN/logout" ] && break
+    if [ $(( $(date +%s) - t0 )) -lt 5 ]; then fails=$((fails + 1)); else fails=0; fi
+    if [ "$fails" -ge 5 ]; then exec i3 -c "$HOME/.config/i3/config"; fi   # broken xfwm4 → still a desktop
+    sleep 0.5
+done
+rm -f "$RUN/logout"
