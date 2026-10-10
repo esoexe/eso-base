@@ -71,12 +71,14 @@ root= ro=ro init=/usr/lib/systemd/systemd live=0 label=ESO_CORE splash=0
 for a in $(cat /proc/cmdline); do
     case $a in root=*) root=${a#root=};; rw) ro=rw;; init=*) init=${a#init=};; eso.live) live=1;; eso.label=*) label=${a#eso.label=};; splash) splash=1;; nosplash|nomodeset) splash=0; nospl=1;; esac
 done
+mark() { echo "<5>eso-init: $*" > /dev/kmsg; }
 /usr/lib/systemd/systemd-udevd --daemon --resolve-names=never
 [[ ${nospl:-0} == 1 ]] && splash=0
 # the ESO boot animation from the first second (plymouth follows the display as udev brings it up below)
 if [[ $splash == 1 && -x /usr/sbin/plymouthd ]]; then
     mkdir -p /run/plymouth /dev/pts; mountpoint -q /dev/pts || mount -t devpts devpts -o gid=5,mode=620 /dev/pts
     plymouthd --mode=boot --attach-to-session --ignore-serial-consoles --pid-file=/run/plymouth/pid && plymouth show-splash || splash=0
+    mark "plymouth started (splash=$splash)"
 fi
 udevadm trigger --action=add --type=subsystems
 # the display driver of this PC/VM, loaded directly (bochs, virtio-gpu, vmwgfx, ...; firmware framebuffers are built in)
@@ -87,8 +89,8 @@ shopt -s nullglob; dri=(/dev/dri/*); fbs=(/dev/fb*); drv=(/sys/bus/pci/drivers/{
 echo "<5>eso-init: display: dri=[${dri[*]##*/}] fb=[${fbs[*]##*/}] drivers=[${drv[*]##*/}]" > /dev/kmsg
 # the display first: its driver loads before the disks', so the ESO animation (not a text fallback) is the first
 # thing on screen. plymouth waits up to DeviceTimeout for a graphical display before falling back to text.
-udevadm trigger --action=add --subsystem-match=pci --attr-match=class=0x03*; udevadm settle --timeout=5
-udevadm trigger --action=add --type=devices; udevadm settle --timeout=30
+udevadm trigger --action=add --subsystem-match=pci --attr-match=class=0x03*; udevadm settle --timeout=5; mark "display settled"
+udevadm trigger --action=add --type=devices; udevadm settle --timeout=30; mark "devices settled (rc $?)"
 # safety net: the usual disk controllers even if a modalias event was missed (cheap, no-ops when absent)
 for m in virtio_pci virtio_blk virtio_scsi ahci ata_piix nvme sd_mod sr_mod mmc_block sdhci_pci xhci_pci ehci_pci \
          usb_storage uas hv_storvsc vmw_pvscsi mptspi ext4 btrfs xfs vfat; do modprobe -q $m 2>/dev/null; done
@@ -120,7 +122,9 @@ if [[ -z $dev ]]; then
     plymouth quit 2>/dev/null; exec bash
 fi
 [[ $live == 1 ]] || mount -o $ro "$dev" /newroot || { echo "ESO: cannot mount $dev"; plymouth quit 2>/dev/null; exec bash; }
+mark "root ready"
 [[ $splash == 1 ]] && plymouth update-root-fs --new-root-dir=/newroot 2>/dev/null
+mark "switching root"
 udevadm control --exit
 mount --move /run /newroot/run 2>/dev/null; mount --move /dev /newroot/dev 2>/dev/null
 umount /sys /proc
