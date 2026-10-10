@@ -37,6 +37,28 @@ usermod -aG video,render,input greeter
 install -d -o greeter -g greeter -m755 /var/lib/greetd /var/cache/tuigreet
 
 # ───────────────────────────── system config ─────────────────────────────
+step "Python $V_python: the stdlib modules whose libraries came after stage 3c (sqlite3 for ESO Browser, ...)"
+# same version + same configure as stage 3c; only extension modules that are missing get copied in
+rm -rf /sources/pyx; mkdir -p /sources/pyx; tar -xf "/sources/Python-$V_python.tar.xz" -C /sources/pyx --strip-components=1
+cd /sources/pyx
+quiet ./configure --prefix=/usr --enable-shared --with-system-expat --without-static-libpython --without-ensurepip
+quiet make -j"$(nproc)"
+DYN=$(python3 -c 'import sysconfig; print(sysconfig.get_path("platstdlib") + "/lib-dynload")')
+added=""
+for so in build/lib.*/*.so; do
+    [[ -e "$DYN/${so##*/}" ]] && continue
+    install -m755 "$so" "$DYN/"; added+=" ${so##*/}"
+done
+cd /sources; rm -rf /sources/pyx
+echo "  added:${added:- nothing}"
+python3 -c 'import sqlite3; c = sqlite3.connect(":memory:"); print("  sqlite3", sqlite3.sqlite_version, "ok")'
+python3 - <<'PY'
+import importlib
+for m in ("lzma", "bz2", "ctypes", "ssl", "readline", "curses", "uuid", "dbm.gnu", "zlib", "hashlib", "decimal"):
+    try: importlib.import_module(m); print("   ", m, "ok")
+    except Exception as e: print("   ", m, "MISSING:", e)
+PY
+
 step "ESO system config (overlay, PAM, zram, X)"
 cp -a /sources/files/eso-overlay/. /
 chmod 755 /usr/local/sbin/eso-firstboot /usr/libexec/eso-zram /usr/libexec/eso-selftest; chmod 440 /etc/sudoers.d/eso-live
