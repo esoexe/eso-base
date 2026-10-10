@@ -69,18 +69,18 @@ truncate -s 8M "$W/efi.img"; mkfs.vfat -n ESOEFI "$W/efi.img" >/dev/null
 mmd -i "$W/efi.img" ::/EFI ::/EFI/BOOT; mcopy -i "$W/efi.img" "$W/bootx64.efi" ::/EFI/BOOT/BOOTX64.EFI
 # ESO OS: quiet boot with the ESO animation (plymouth, from the initramfs); ESO Core keeps the plain console
 SPLASHARGS="loglevel=3"; [[ $ED == os ]] && SPLASHARGS="quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3"
+# ONE way to start, no menu, no wait: GRUB goes straight to the ESO boot animation (timeout 0, menu hidden).
+# Graphics trouble on an odd PC is handled by the system itself (firmware framebuffer until the GPU driver loads),
+# not by a second "safe graphics" entry.
 cat > "$W/iso/boot/grub/grub.cfg" <<G
-set timeout=2
+set timeout=0
+set timeout_style=hidden
 set default=0
 insmod all_video
 # the boot animation needs a graphics mode handed to the kernel: UEFI keeps the firmware's (GOP) mode, BIOS asks VESA
 if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1024x768,auto; fi
-menuentry "$NAME (live)" {
+menuentry "$NAME" {
     linux /boot/vmlinuz eso.live eso.label=$LABEL $SPLASHARGS console=ttyS0,115200 console=tty0
-    initrd /boot/initrd.img
-}
-menuentry "$NAME (live, safe graphics)" {
-    linux /boot/vmlinuz eso.live eso.label=$LABEL loglevel=3 nomodeset console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
 G

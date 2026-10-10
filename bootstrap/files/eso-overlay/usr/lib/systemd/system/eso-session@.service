@@ -1,0 +1,39 @@
+[Unit]
+# Boot animation -> desktop with nothing in between: no login program, no switch to another console.
+# The desktop's X server starts on tty1, the console the boot animation is drawn on, with "-background none", so it
+# takes over the animation's last picture (plymouth quit --retain-splash) and the wallpaper is drawn over it.
+# greetd (vt7) clears its console first (reset_vt), which was the black blink; it now only runs when
+# /etc/eso/autologin does not exist (several accounts, or the owner turned automatic start off).
+Description=ESO OS desktop for %i (straight from the boot animation)
+Documentation=file:///etc/eso/autologin
+After=systemd-user-sessions.service systemd-logind.service plymouth-read-write.service eso-oem-setup.service
+After=getty@tty1.service
+Conflicts=getty@tty1.service
+ConditionPathExists=/etc/eso/autologin
+# X cannot start at all (5 tries in a minute): the text sign-in on tty1, never a dead screen
+StartLimitIntervalSec=60
+StartLimitBurst=5
+OnFailure=getty@tty1.service
+
+[Service]
+User=%i
+PAMName=eso-session
+WorkingDirectory=~
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=no
+TTYVHangup=no
+TTYVTDisallocate=no
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user XDG_SEAT=seat0 XDG_VTNR=1
+# "+": as root. The animation stops on its last frame; that frame stays on the screen until X draws.
+ExecStartPre=+-/usr/bin/plymouth quit --retain-splash
+ExecStart=/usr/libexec/eso-session-run
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=graphical.target

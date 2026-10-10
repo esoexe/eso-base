@@ -4,6 +4,12 @@ set -u
 if [ ! -f /etc/eso/keep-autologin ]; then
     sed -i '/^# Live USB \/ VM image autologin/,$d' /etc/greetd/config.toml
     sed -i '/^\[initial_session\]/,$d' /etc/greetd/config.toml
+    # the live user's automatic desktop start ends with the live system; an account made at first start
+    # (eso-oem-setup) writes its own /etc/eso/autologin ("NAME" + "lock": desktop behind ESO Lock)
+    if [ "$(sed -n 1p /etc/eso/autologin 2>/dev/null)" = eso ]; then
+        rm -f /etc/eso/autologin
+        systemctl disable eso-session@eso.service >/dev/null 2>&1 || true
+    fi
 fi
 rm -f /etc/polkit-1/rules.d/49-eso-live.rules /etc/sudoers.d/eso-live \
       /usr/share/applications/eso-install.desktop /etc/xdg/autostart/calamares-desktop-icon.desktop

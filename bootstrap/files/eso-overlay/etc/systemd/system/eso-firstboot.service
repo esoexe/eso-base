@@ -3,7 +3,7 @@ Description=ESO OS first-boot cleanup (installed systems only)
 ConditionKernelCommandLine=!boot=live
 ConditionKernelCommandLine=!eso.live
 ConditionPathExists=!/etc/eso/firstboot-done
-Before=greetd.service display-manager.service
+Before=greetd.service display-manager.service eso-session@eso.service
 
 [Service]
 Type=oneshot

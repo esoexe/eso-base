@@ -3,6 +3,10 @@
 sleep "${ESO_SELFTEST_WAIT:-100}"
 # the serial login (agetty) hangs up ttyS0 at start, which kills descriptors opened earlier: build the report in a
 # file, then open the ports only now. ttyS1 is a second port that nothing else uses (the CI test gives QEMU two).
+# run a command as USER (plain, no session environment)
+asuser_plain() { local u=$1; shift; python3 -c 'import os,pwd,sys
+p=pwd.getpwnam(sys.argv[1]); os.initgroups(p.pw_name,p.pw_gid); os.setgid(p.pw_gid); os.setuid(p.pw_uid)
+os.environ.update(HOME=p.pw_dir,USER=p.pw_name,LOGNAME=p.pw_name); os.execvp(sys.argv[2],sys.argv[2:])' "$u" "$@"; }
 report() {
 pss() { awk '/^Pss:/{s+=$2} END{print s+0}' "/proc/$1/smaps_rollup" 2>/dev/null; }
 echo "ESO-SELFTEST begin $(date -u +%T) uptime=$(cut -d' ' -f1 /proc/uptime)s"
@@ -16,9 +20,18 @@ for p in /proc/[0-9]*; do
 done
 echo "ESO-SELFTEST pss-total: $((total / 1024)) MiB (all processes)"
 printf '%s\n' "${rows[@]}" | sort -rn | head -15 | awk '{printf "ESO-SELFTEST   %6.1f MiB  %-8s %s\n", $1/1024, $2, substr($0, index($0,$3))}'
-for x in greetd Xorg xfwm4 eso-shell eso-lite-session; do
+for x in Xorg xfwm4 eso-shell eso-lite-session; do
     pgrep -f "$x" >/dev/null && echo "ESO-SELFTEST running: $x" || echo "ESO-SELFTEST NOT running: $x"
 done
+echo "ESO-SELFTEST session: eso-session@eso=$(systemctl is-active eso-session@eso.service 2>/dev/null) greetd=$(systemctl is-active greetd.service 2>/dev/null) vt=$(cat /sys/class/tty/tty0/active 2>/dev/null)"
+# boot speed: firmware/loader (when known) + kernel + initramfs + system, and when the desktop (eso-shell) started
+echo "ESO-SELFTEST boot-time: $(systemd-analyze time 2>/dev/null | head -n1 | sed 's/^Startup finished in //')"
+sp=$(pgrep -f "bin/eso-shell( |$)" | head -n1)
+[[ -n $sp ]] && echo "ESO-SELFTEST desktop-at: $(awk -v up="$(cut -d' ' -f1 /proc/uptime)" -v et="$(ps -o etimes= -p "$sp" | tr -d ' ')" 'BEGIN{printf "%.1f", up-et}') s after the kernel started"
+systemd-analyze blame 2>/dev/null | head -n 8 | sed 's/^ */ESO-SELFTEST slowest: /'
+echo "ESO-SELFTEST setuid: $(find /usr -xdev -perm -4000 -type f 2>/dev/null | sed 's|.*/||' | sort | tr '\n' ' ')"
+# ESO Lock: the real PAM check as the live user (no password: Enter unlocks)
+[[ -x /usr/libexec/eso-pamtest ]] && echo "ESO-SELFTEST lock-pam: $(cd /tmp && asuser_plain eso python3 /usr/libexec/eso-pamtest eso-lock '' 2>&1 | tail -n1)"
 # ESO updates on ESO Base: a real signed check against the live ESO update server (installs nothing)
 if [[ -x /usr/local/libexec/eso-update ]]; then
     u=$(timeout 120 /usr/local/libexec/eso-update check 2>&1 | tail -1)
@@ -40,7 +53,8 @@ miss=""; for c in which 7z xdg-open xdg-settings xdg-user-dir update-desktop-dat
 echo "ESO-SELFTEST tools-missing:${miss:- none}"
 echo "ESO-SELFTEST flatpak: $(flatpak --version 2>/dev/null) remotes: $(ls /etc/flatpak/remotes.d 2>/dev/null | tr '\n' ' ')"
 echo "ESO-SELFTEST mpv-vulkan: libplacebo+glslang=$(ldd /usr/lib/libplacebo.so 2>/dev/null | grep -c glslang) vo: $(mpv --vo=help 2>/dev/null | grep -oE '^ +(gpu-next|gpu) ' | tr -d ' ' | tr '\n' ' ')"
-echo "ESO-SELFTEST ocr: $(tesseract --list-langs 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+echo "ESO-SELFTEST ocr: $(cd / && tesseract --list-langs 2>/dev/null | tail -n +2 | tr '\n' ' ')"
+[[ -x /usr/libexec/eso-ocrtest ]] && (cd /tmp && asuser_plain eso python3 /usr/libexec/eso-ocrtest 2>&1 | sed 's/^/ESO-SELFTEST ocr-test: /')
 # app launch speed: each app started like the Start menu does, timed until its window is on screen, then closed
 export DISPLAY=:0 XAUTHORITY=/home/eso/.Xauthority
 asuser() { python3 -c 'import os,pwd,sys

@@ -1,6 +1,6 @@
 [Unit]
 Description=ESO boot animation: hand over to the desktop
-After=greetd.service
+After=greetd.service eso-session@eso.service
 ConditionPathExists=/run/plymouth/pid
 
 [Service]

@@ -1,0 +1,5 @@
+#!/bin/sh
+# eso-session@USER.service: the user's ESO desktop. /etc/eso/autologin line 1 = account, line 2 "lock" = the account
+# has a password: the desktop opens behind ESO Lock, which is then the sign-in screen (the same PAM password check).
+[ "$(sed -n 2p /etc/eso/autologin 2>/dev/null)" = lock ] && export ESO_LOCK_AT_START=1
+exec /usr/local/bin/eso-auto-session

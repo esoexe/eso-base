@@ -30,13 +30,16 @@ chroot "$M" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
   grub-install --target=i386-pc --boot-directory=/boot '$LOOP' &&
   grub-install --target=x86_64-efi --efi-directory=/boot/efi --boot-directory=/boot --removable --no-nvram"
 cat > "$M/boot/grub/grub.cfg" <<G
-set timeout=2
+set timeout=0
+set timeout_style=hidden
 set default=0
 insmod part_gpt
 insmod ext2
+insmod all_video
+if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1024x768,auto; fi
 search --no-floppy --label ESO-ROOT --set=root
-menuentry "ESO OS (ESO Base, kernel $KV)" {
-    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro loglevel=3 console=tty0 console=ttyS0,115200
+menuentry "ESO OS" {
+    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img-$KV
 }
 G

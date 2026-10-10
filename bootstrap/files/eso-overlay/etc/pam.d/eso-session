@@ -1,0 +1,7 @@
+# ESO OS desktop started straight from the boot animation (eso-session@USER.service).
+# No password step here: the account was chosen at first start, and when it has a password the session opens
+# behind ESO Lock (the lock screen is the sign-in screen). account + session = logind session, limits, env.
+account   include     common-account
+session   required    pam_env.so
+session   required    pam_limits.so
+session   include     common-session

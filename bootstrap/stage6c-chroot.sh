@@ -61,7 +61,8 @@ PY
 
 step "ESO system config (overlay, PAM, zram, X)"
 cp -a /sources/files/eso-overlay/. /
-chmod 755 /usr/local/sbin/eso-firstboot /usr/libexec/eso-zram /usr/libexec/eso-selftest /usr/libexec/eso-splash-quit; chmod 440 /etc/sudoers.d/eso-live
+chmod 755 /usr/local/sbin/eso-firstboot /usr/libexec/eso-zram /usr/libexec/eso-selftest /usr/libexec/eso-splash-quit \
+      /usr/libexec/eso-session-run; chmod 440 /etc/sudoers.d/eso-live
 chown -R root:root /etc/sudoers.d /etc/polkit-1/rules.d
 # the PAM names ESO's apps use (Debian's), mapped onto ESO Base's stack; nullok = ESO's optional password works
 cat > /etc/pam.d/common-auth <<'EOF'
@@ -78,7 +79,24 @@ session   include     common-session
 password  include     common-password
 EOF
 # sudo/su for users with an empty password (ESO 3.1 optional password) behave like the login screen
+# pam_unix checks the password of a non-root program (ESO Lock, the session's own polkit agent ...) through
+# unix_chkpwd, which must run as root to read /etc/shadow. Upstream Linux-PAM installs it without the setuid bit
+# (distributions add it), so the lock screen refused every password. unix_chkpwd only answers for the caller's own
+# account.
+CHK=$(command -v unix_chkpwd || ls /usr/sbin/unix_chkpwd /sbin/unix_chkpwd 2>/dev/null | head -1)
+[[ -n $CHK ]] || { echo "FAILED: unix_chkpwd missing (Linux-PAM)"; exit 1; }
+chown root:root "$CHK"; chmod 4755 "$CHK"; ls -l "$CHK"
 [[ -f /etc/pam.d/sudo ]] && sed -i 's/^auth\( *\)include\( *\)system-auth/auth\1include\2common-auth/' /etc/pam.d/sudo
+# OCR: tesseract built with CMake has no built-in data folder; without TESSDATA_PREFIX it searches the CURRENT
+# directory, so every ESO app (Snip, Amenokal) got no languages and an empty result. One small wrapper fixes every
+# caller; an explicit TESSDATA_PREFIX or --tessdata-dir still wins.
+if [[ -x /usr/bin/tesseract && ! -e /usr/libexec/tesseract.bin ]] && ! grep -q "ESO-TESSDATA" /usr/bin/tesseract 2>/dev/null; then
+    mv /usr/bin/tesseract /usr/libexec/tesseract.bin
+    printf '#!/bin/sh\n# ESO-TESSDATA: tesseract with its language data (ESO Base)\n: "${TESSDATA_PREFIX:=/usr/share/tessdata}"\nexport TESSDATA_PREFIX\nexec /usr/libexec/tesseract.bin "$@"\n' > /usr/bin/tesseract
+    chmod 755 /usr/bin/tesseract
+fi
+install -d /usr/lib/environment.d; echo 'TESSDATA_PREFIX=/usr/share/tessdata' > /usr/lib/environment.d/90-eso-tessdata.conf
+(cd / && tesseract --list-langs 2>&1 | tr '\n' ' '); echo
 install -d /etc/X11; printf 'allowed_users=anybody\nneeds_root_rights=auto\n' > /etc/X11/Xwrapper.config
 # the 3.10 session starts xcape for "tap Windows key = Start"; ESO Base has eso-supertap for exactly that
 [[ -e /usr/bin/xcape ]] || printf '#!/bin/sh\n# ESO Base: xcape compatibility. A lone Super tap sends Ctrl+Escape (Start), as eso-lite-session asks.\n# xcape forks into the background and the session goes on; eso-supertap does not fork, so start it in the background.\n/usr/bin/eso-supertap >/dev/null 2>&1 &\nexit 0\n' > /usr/bin/xcape
@@ -103,6 +121,15 @@ ESO_BASE_PKG=1 python3 "$D/usr/share/eso/src/lib/eso/esobasepkg.py" install-loca
     > /tmp/deploy.log 2>&1 || { tail -40 /tmp/deploy.log; echo "FAILED: installing eso-desktop"; exit 1; }
 rm -rf "$D"; tail -1 /tmp/deploy.log
 echo "  deployed: $(ls /usr/local/bin | wc -l) programs, $(ls /usr/local/lib/eso | wc -l) modules"
+step "PAM: ESO's service files in ESO Base syntax, then a real password test (as ESO Lock does it)"
+# upstream Linux-PAM does not know Debian's "@include FILE" (the whole service fails): rewrite any that a package left
+for f in /etc/pam.d/*; do
+    grep -q '^@include' "$f" 2>/dev/null || continue
+    sed -i -E 's/^@include[[:space:]]+common-(auth|account|session|password)[[:space:]]*$/\1      include     common-\1/' "$f"
+    sed -i -E 's/^@include[[:space:]]+(.*)$/# (Debian syntax, not used on ESO Base) @include \1/' "$f"
+    echo "  rewrote @include in $f"
+done
+
 step "/etc/skel: a full per-user ESO setup made by ESO's install.sh"
 SRC=/usr/share/eso/src; T=/tmp/eso-skel-home
 rm -rf "$T"; install -d "$T"; cp -a /etc/skel/. "$T"/ 2>/dev/null || true
@@ -156,10 +183,44 @@ passwd -d eso >/dev/null
 # own account (the live user "eso"; on an installed system the account made at first start, group "sudo").
 passwd -l root >/dev/null
 [[ $(passwd -S root | awk '{print $2}') == L ]] || { echo "FAILED: root account not locked"; exit 1; }
+# setuid helpers: until this build, every stage ran "chown -R root:root" over /usr, which clears setuid bits. ESO Base
+# then had no working sudo/pkexec for normal accounts (ESO Ultimate activation and Settings changes go through pkexec),
+# the lock screen could not check passwords (unix_chkpwd), AppImage games could not mount (fusermount3), and system
+# D-Bus services could not be started on demand (dbus-daemon-launch-helper). Same modes as the upstream installs.
+for f in /usr/bin/sudo /usr/bin/pkexec /usr/lib/polkit-1/polkit-agent-helper-1 /usr/sbin/unix_chkpwd /usr/bin/su \
+         /usr/bin/passwd /usr/bin/chsh /usr/bin/chfn /usr/bin/newgrp /usr/bin/gpasswd /usr/bin/newuidmap /usr/bin/newgidmap \
+         /usr/bin/mount /usr/bin/umount /usr/bin/fusermount3 /usr/bin/fusermount /usr/libexec/Xorg.wrap; do
+    [[ -f $f && ! -L $f ]] && { chown root:root "$f"; chmod 4755 "$f"; }
+done
+if [[ -f /usr/libexec/dbus-daemon-launch-helper ]]; then
+    chown root:messagebus /usr/libexec/dbus-daemon-launch-helper; chmod 4750 /usr/libexec/dbus-daemon-launch-helper
+fi
+rm -f /var/mail/esobuild
+echo "  setuid: $(find /usr -xdev -perm -4000 -type f | sort | tr '\n' ' ')"
+asuser eso sudo -n true && echo "  sudo as the live user: ok" || { echo "FAILED: sudo does not work for the live user"; exit 1; }
+# ESO Lock password check, for real: the live user (no password), and a test account with one (right and wrong)
+cp /sources/files/eso-overlay/etc/pam.d/eso-lock /etc/pam.d/eso-lock      # the desktop package must not replace it
+install -m755 /sources/files/eso-pamtest.py /usr/libexec/eso-pamtest
+pt=0
+asuser eso python3 /usr/libexec/eso-pamtest eso-lock "" || { echo "  FAILED: the live user (no password) cannot unlock"; pt=1; }
+id esopam >/dev/null 2>&1 || useradd -m -s /bin/sh esopam
+echo 'esopam:Eso-Lock-Test-42' | chpasswd
+asuser esopam python3 /usr/libexec/eso-pamtest eso-lock "Eso-Lock-Test-42" || { echo "  FAILED: correct password refused"; pt=1; }
+if asuser esopam python3 /usr/libexec/eso-pamtest eso-lock "wrong-password" >/dev/null; then echo "  FAILED: wrong password accepted"; pt=1
+else echo "  wrong password refused: ok"; fi
+userdel -r esopam 2>/dev/null || userdel esopam
+[[ $pt = 0 ]] || exit 1
+# text recognition for real: words drawn like on a screen, read back by tesseract (as Snip/Amenokal call it)
+install -m755 /sources/files/eso-ocrtest.py /usr/libexec/eso-ocrtest
+(cd /home/eso && asuser eso env -u TESSDATA_PREFIX python3 /usr/libexec/eso-ocrtest) || { echo "FAILED: text recognition (OCR)"; exit 1; }
 # stage 6d services: Bluetooth (starts only when an adapter exists), power profiles (Ultra), VM display agent
 for u in bluetooth power-profiles-daemon spice-vdagentd eso-splash-quit; do
     [[ -e /usr/lib/systemd/system/$u.service ]] && { systemctl enable "$u.service" >/dev/null 2>&1 || echo "  WARNING: enable $u failed"; }
 done
+# the live user's desktop starts straight from the boot animation (greetd only without /etc/eso/autologin)
+install -d /etc/systemd/system/graphical.target.wants
+ln -sf /usr/lib/systemd/system/eso-session@.service /etc/systemd/system/graphical.target.wants/eso-session@eso.service
+systemctl daemon-reload 2>/dev/null || true
 for u in greetd eso-firstboot eso-zram eso-selftest eso-selftest-console NetworkManager earlyoom; do
     systemctl enable "$u.service" >/tmp/en.log 2>&1 || { echo "  WARNING: systemctl enable $u failed:"; cat /tmp/en.log; }
 done
@@ -230,7 +291,7 @@ if command -v Xvfb >/dev/null; then
         step "ESO Ultimate on ESO Base: install, start each app, remove"
         if ESO_BASE_PKG=1 python3 /usr/share/eso/src/lib/eso/esobasepkg.py install-local /sources/eso-ultimate.deb > /tmp/ult.log 2>&1; then
             tail -1 /tmp/ult.log
-            for app in ilyass eso-sheets eso-slides eso-studio eso-nano eso-defender; do
+            for app in ilyass eso-sheets eso-slides eso-studio eso-nano eso-defender eso-cosmos eso-gamebar; do
                 f=/usr/local/bin/$app
                 if grep -q ESO-ULTIMATE-STUB "$f" 2>/dev/null; then echo "  $app: still the Standard stub"; bad=1; continue; fi
                 # the license check answers "activated" for this test run only (the app runs as on an activated PC)

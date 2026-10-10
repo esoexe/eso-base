@@ -1,3 +1,4 @@
-# ESO Lock (eso-lockscreen) — same password rules as the login screen
-@include common-auth
-@include common-account
+# ESO Lock (eso-lockscreen): the same password rules as the login screen.
+# ESO Base PAM syntax ("type control include file"): upstream Linux-PAM has no Debian "@include".
+auth      include     common-auth
+account   include     common-account

@@ -69,6 +69,19 @@ jobs:
           ffprobe -v error -show_entries format=duration:stream=r_frame_rate,width,height -of compact eso-os-boot.mp4 || true
           last=$(ls frames/f*.ppm | tail -1); ffmpeg -loglevel error -y -i "$last" eso-os-desktop.png || true
           for n in 010 030 060 090 120 150; do if [ -f frames/f$n.ppm ]; then ffmpeg -loglevel error -y -i frames/f$n.ppm frame-$n.png; fi; done
+          # black screens after the boot animation appeared (the "blink" between animation and desktop), from the 30 fps video
+          ffmpeg -loglevel error -i eso-os-boot-raw.mp4 -vf scale=64:40,format=gray -f rawvideo - 2>/dev/null | python3 -c '
+          import sys
+          d = sys.stdin.buffer.read(); n = 64 * 40; fr = [d[i:i + n] for i in range(0, len(d) - n + 1, n)]
+          m = [sum(f) / n for f in fr]
+          first = next((i for i, v in enumerate(m) if v > 12), None)
+          if first is None: print("blink check: the screen never lit up"); sys.exit(0)
+          runs, cur = [], None
+          for i in range(first, len(m)):
+              if m[i] < 6: cur = cur if cur is not None else i
+              elif cur is not None: runs.append((cur, i)); cur = None
+          print(f"blink check: animation from {first / 30:.2f} s; black gaps after it: " + (", ".join(f"{(b - a) * 1000 // 30} ms at {a / 30:.2f} s" for a, b in runs) or "none"))
+          ' || true
           echo "----- ESO self-test (from inside the running ESO OS) -----"
           { grep -a "ESO-SELFTEST" selftest-port.log 2>/dev/null || grep -a "ESO-SELFTEST" boot-desktop.log; } | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' | tee selftest.txt || true
           # pass = the ESO session runs and the screen is not blank

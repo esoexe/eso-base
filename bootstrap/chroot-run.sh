@@ -11,8 +11,11 @@ LIST=$1 INNER=$2
 rm -f "$ESO/sources/versions.env"
 fetch_list "$LIST" "$ESO/sources"
 install -m755 "$HERE/$INNER" "$ESO/sources/inner.sh"
-chown -R root:root "$ESO"/{usr,var,etc,lib64}
-[[ -d $ESO/tools ]] && chown -R root:root "$ESO/tools"
+# files the early stages built as the unprivileged host user (uid/gid above 1000) become root's. Only those: a blanket
+# "chown -R" also clears every setuid bit (sudo, pkexec, unix_chkpwd, fusermount3 ...) and system users' ownership.
+for d in "$ESO"/{usr,var,etc,lib64} "$ESO/tools"; do
+    [[ -d $d ]] && find "$d" -xdev \( -uid +1000 -o -gid +1000 \) -exec chown -h root:root {} + 2>/dev/null || true
+done
 mkdir -p "$ESO"/{dev,proc,sys,run}
 cleanup() { for m in dev/pts dev proc sys run; do mountpoint -q "$ESO/$m" && umount -l "$ESO/$m"; done; true; }
 trap cleanup EXIT
