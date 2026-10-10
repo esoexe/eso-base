@@ -121,7 +121,8 @@ b_clamav() {
     unpack clamav clamav-; sysuser clamav /var/lib/clamav "ClamAV"
     install -d -o clamav -g clamav /var/lib/clamav /var/log/clamav
     # Rust parts: the release tarball vendors every crate in .cargo/vendor
-    mkdir -p /tmp/cargo-clam; printf '[source.crates-io]\nreplace-with = "v"\n[source.v]\ndirectory = "%s/.cargo/vendor"\n[net]\noffline = true\n' "$PWD" > /tmp/cargo-clam/config.toml
+    # (its own .cargo/config.toml already points crates-io at .cargo/vendor; only forbid the network here)
+    mkdir -p /tmp/cargo-clam; printf '[net]\noffline = true\n' > /tmp/cargo-clam/config.toml
     CARGO_HOME=/tmp/cargo-clam cmk -DENABLE_MILTER=OFF -DENABLE_TESTS=OFF -DENABLE_MAN_PAGES=OFF -DENABLE_DOXYGEN=OFF \
         -DENABLE_EXAMPLES=OFF -DENABLE_JSON_SHARED=ON -DENABLE_SYSTEMD=ON -DENABLE_CLAMONACC=OFF \
         -DAPP_CONFIG_DIRECTORY=/etc/clamav -DDATABASE_DIRECTORY=/var/lib/clamav -DSYSTEMD_UNIT_DIR=/usr/lib/systemd/system
