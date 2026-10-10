@@ -1,0 +1,13 @@
+[Unit]
+Description=ESO self-test: copy the system journal to the second serial port (only with eso.selftest)
+ConditionKernelCommandLine=eso.selftest
+DefaultDependencies=no
+After=systemd-journald.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'mkdir -p /run/systemd/journald.conf.d && printf "[Journal]\\nForwardToConsole=yes\\nTTYPath=/dev/ttyS1\\nMaxLevelConsole=info\\n" > /run/systemd/journald.conf.d/eso-selftest.conf && systemctl restart systemd-journald.service'
+
+[Install]
+WantedBy=sysinit.target

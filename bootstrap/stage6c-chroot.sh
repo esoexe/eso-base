@@ -152,8 +152,13 @@ printf '[Settings]\ngtk-theme-name=ESO-Metal\ngtk-icon-theme-name=ESO-Metal\ngtk
 # live user "eso": no password (autologin; sudo without password only in the live system, see /etc/sudoers.d/eso-live)
 id eso >/dev/null 2>&1 || useradd -m -s /usr/bin/zsh -c "ESO Live" -G sudo,audio,video,input,render,netdev eso
 passwd -d eso >/dev/null
-systemctl enable greetd.service eso-firstboot.service eso-zram.service eso-selftest.service NetworkManager.service earlyoom.service \
-    >/dev/null 2>&1 || true
+for u in greetd eso-firstboot eso-zram eso-selftest eso-selftest-console NetworkManager earlyoom; do
+    systemctl enable "$u.service" >/tmp/en.log 2>&1 || { echo "  WARNING: systemctl enable $u failed:"; cat /tmp/en.log; }
+done
+for l in multi-user.target.wants/eso-selftest.service sysinit.target.wants/eso-selftest-console.service; do
+    [[ -e /etc/systemd/system/$l ]] || { mkdir -p "/etc/systemd/system/${l%/*}"; ln -sf "/usr/lib/systemd/system/${l##*/}" "/etc/systemd/system/$l"; echo "  linked $l by hand"; }
+done
+for d in /etc/systemd/system/*.wants; do echo "  ${d##*/}: $(ls "$d" | tr '\n' ' ')"; done
 ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
 # Plymouth is not in the initramfs yet: its late start in the real root leaves "plymouth --wait" holding the boot
 # (graphical.target never reached). Off until it is wired into the initramfs; ESO's intro animates the sign-in.
