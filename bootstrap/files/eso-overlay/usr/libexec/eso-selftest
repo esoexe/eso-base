@@ -28,6 +28,7 @@ fi
 # security + boot animation
 echo "ESO-SELFTEST root-account: $(passwd -S root 2>/dev/null | awk '{print $2}') (L = locked)"
 echo "ESO-SELFTEST splash: cmdline=$(grep -qw splash /proc/cmdline && echo splash || echo none) plymouth=$(plymouth --ping 2>/dev/null && echo still-running || echo ended)"
+echo "ESO-SELFTEST initramfs: $(dmesg 2>/dev/null | grep -o 'eso-init: .*' | head -n1)"
 il=$(ls /run/user/*/eso/intro.log 2>/dev/null | head -n1)
 if [[ -z $il ]]; then echo "ESO-SELFTEST intro: not started"
 elif grep -q Traceback "$il"; then echo "ESO-SELFTEST intro: FAILED: $(tail -n1 "$il")"

@@ -79,6 +79,12 @@ if [[ $splash == 1 && -x /usr/sbin/plymouthd ]]; then
     plymouthd --mode=boot --attach-to-session --ignore-serial-consoles --pid-file=/run/plymouth/pid && plymouth show-splash || splash=0
 fi
 udevadm trigger --action=add --type=subsystems
+# the display driver of this PC/VM, loaded directly (bochs, virtio-gpu, vmwgfx, ...; firmware framebuffers are built in)
+for d in /sys/bus/pci/devices/*; do
+    case $(cat "$d/class" 2>/dev/null) in 0x03*) modprobe -q "$(cat "$d/modalias")" 2>/dev/null ;; esac
+done
+shopt -s nullglob; dri=(/dev/dri/*); fbs=(/dev/fb*); drv=(/sys/bus/pci/drivers/{bochs*,virtio*,qxl*,vmw*,vbox*,cirrus*,hyperv*}); shopt -u nullglob
+echo "<5>eso-init: display: dri=[${dri[*]##*/}] fb=[${fbs[*]##*/}] drivers=[${drv[*]##*/}]" > /dev/kmsg
 # the display first: its driver loads before the disks', so the ESO animation (not a text fallback) is the first
 # thing on screen. plymouth waits up to DeviceTimeout for a graphical display before falling back to text.
 udevadm trigger --action=add --subsystem-match=pci --attr-match=class=0x03*; udevadm settle --timeout=5
