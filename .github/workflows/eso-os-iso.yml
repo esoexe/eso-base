@@ -103,6 +103,7 @@ jobs:
             frame-*.png
             selftest.txt
             boot-*.log
+            selftest-port.log
           retention-days: 30
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
