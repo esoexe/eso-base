@@ -158,6 +158,9 @@ done
 for l in multi-user.target.wants/eso-selftest.service sysinit.target.wants/eso-selftest-console.service; do
     [[ -e /etc/systemd/system/$l ]] || { mkdir -p "/etc/systemd/system/${l%/*}"; ln -sf "/usr/lib/systemd/system/${l##*/}" "/etc/systemd/system/$l"; echo "  linked $l by hand"; }
 done
+# ESO OS: NetworkManager owns the network (Wi-Fi, tray, Settings); ESO Core's systemd-networkd would fight it
+systemctl disable systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/*.wants/systemd-networkd*.service /etc/systemd/system/*.wants/systemd-networkd.socket
 for d in /etc/systemd/system/*.wants; do echo "  ${d##*/}: $(ls "$d" | tr '\n' ' ')"; done
 ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
 # Plymouth is not in the initramfs yet: its late start in the real root leaves "plymouth --wait" holding the boot
