@@ -101,6 +101,10 @@ install -d /etc/X11; printf 'allowed_users=anybody\nneeds_root_rights=auto\n' > 
 # the 3.10 session starts xcape for "tap Windows key = Start"; ESO Base has eso-supertap for exactly that
 [[ -e /usr/bin/xcape ]] || printf '#!/bin/sh\n# ESO Base: xcape compatibility. A lone Super tap sends Ctrl+Escape (Start), as eso-lite-session asks.\n# xcape forks into the background and the session goes on; eso-supertap does not fork, so start it in the background.\n/usr/bin/eso-supertap >/dev/null 2>&1 &\nexit 0\n' > /usr/bin/xcape
 chmod 755 /usr/bin/xcape
+# no feh / xwallpaper on ESO Base: without a root painter the screen stays black between the boot animation and
+# eso-shell's first frame (~3 s). eso-rootpaint paints the wallpaper in a few ms; as "xwallpaper" eso-wallpaper uses it.
+gcc -O2 -Wall -o /usr/bin/eso-rootpaint /sources/files/eso-rootpaint.c -ljpeg -lX11
+chmod 755 /usr/bin/eso-rootpaint; ln -sf eso-rootpaint /usr/bin/xwallpaper
 
 # ───────────────────────────── fonts ─────────────────────────────
 step "JetBrainsMono Nerd Font $V_nerdfont (terminal + dock glyphs)"
@@ -213,6 +217,9 @@ userdel -r esopam 2>/dev/null || userdel esopam
 # text recognition for real: words drawn like on a screen, read back by tesseract (as Snip/Amenokal call it)
 install -m755 /sources/files/eso-ocrtest.py /usr/libexec/eso-ocrtest
 (cd /home/eso && asuser eso env -u TESSDATA_PREFIX python3 /usr/libexec/eso-ocrtest) || { echo "FAILED: text recognition (OCR)"; exit 1; }
+wp=$(ls /etc/skel/.local/share/eso/wallpapers/*-1080p.jpg /usr/share/eso/src/assets/wallpapers/*-1080p.jpg 2>/dev/null | head -n1)
+if [[ -n $wp ]]; then /usr/bin/eso-rootpaint --test /tmp/rp.ppm 1280 800 "$wp" && echo "  eso-rootpaint: wallpaper decoded" || { echo "FAILED: eso-rootpaint"; exit 1; }; rm -f /tmp/rp.ppm
+else echo "  (no built-in wallpaper found for the eso-rootpaint test)"; fi
 # stage 6d services: Bluetooth (starts only when an adapter exists), power profiles (Ultra), VM display agent
 for u in bluetooth power-profiles-daemon spice-vdagentd eso-splash-quit; do
     [[ -e /usr/lib/systemd/system/$u.service ]] && { systemctl enable "$u.service" >/dev/null 2>&1 || echo "  WARNING: enable $u failed"; }
