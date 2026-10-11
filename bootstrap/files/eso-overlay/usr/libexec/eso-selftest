@@ -36,9 +36,18 @@ eu=$(id -u eso 2>/dev/null)
 xl=$(ls -t /home/eso/.local/share/xorg/Xorg.*.log /var/log/Xorg.0.log 2>/dev/null | head -n1)
 if [[ -n $xl ]]; then
     grep -m1 -E '^\[ *[0-9.]+\]' "$xl" | sed 's/^\[ *\([0-9.]*\)\].*/ESO-SELFTEST timeline: \1 Xorg log starts/'
-    grep -E '^\[ *[0-9.]+\]' "$xl" | grep -v -E 'Modeline|^\[ *[0-9.]+\] +(\(--\)|\(==\)|\(II\) +(Loading|Module|LoadModule|UnloadModule|Initializing extension|Matched|Applying))' \
-        | head -n 90 | sed 's/^\[ *\([0-9.]*\)\] */ESO-SELFTEST xorg: \1 /'
+    # only the slow steps: every line that comes 15 ms or more after the previous one (with that previous line),
+    # plus the input devices (each keyboard-like device costs one keymap compile)
+    awk 'match($0, /^\[ *[0-9.]+\]/) { t = substr($0, 2, RLENGTH - 2) + 0
+             if (t - pt >= 0.015) { printf "ESO-SELFTEST xorg-slow: +%dms before %.3f %s  (after: %s)\n", (t - pt) * 1000, t, substr($0, RLENGTH + 1, 90), substr(pl, 1, 70) }
+             else if ($0 ~ /Adding input device|XINPUT: Adding/) printf "ESO-SELFTEST xorg-input: %.3f %s\n", t, substr($0, RLENGTH + 1, 90)
+             pt = t; pl = substr($0, RLENGTH + 1) }' "$xl" | head -n 50
 fi
+hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+for pn in eso-session-run eso-auto-session startx xinit Xorg eso-lite-session xfwm4 eso-shell; do
+    pid=$(pgrep -o -x "$pn" 2>/dev/null || pgrep -o -f "/$pn( |$)" 2>/dev/null | head -n1)
+    [[ -n $pid && -r /proc/$pid/stat ]] && awk -v hz="$hz" -v n="$pn" '{ sub(/^.*\) /, ""); printf "ESO-SELFTEST timeline: %.2f %s started\n", $20 / hz, n }' "/proc/$pid/stat"
+done
 [[ -n $eu && -r /run/user/$eu/eso-rootpaint.t ]] && echo "ESO-SELFTEST timeline: $(cat /run/user/$eu/eso-rootpaint.t) wallpaper painted"
 journalctl -b -o short-monotonic --no-pager 2>/dev/null | grep -E 'eso-session@eso|plymouth-quit|Starting .*session|Reached target graphical' | head -n 6 | sed 's/^/ESO-SELFTEST timeline-j: /'
 [[ -x /usr/libexec/eso-pamtest ]] && echo "ESO-SELFTEST lock-pam: $(cd /tmp && asuser_plain eso python3 /usr/libexec/eso-pamtest eso-lock '' 2>&1 | tail -n1)"
