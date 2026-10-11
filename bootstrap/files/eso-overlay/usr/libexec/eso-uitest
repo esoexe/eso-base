@@ -1,0 +1,286 @@
+#!/usr/bin/python3
+"""eso-uitest - uses the ESO desktop like a person and measures how it responds (CI self-test, as the live user).
+
+  * idle CPU of every process (10 s, nothing touched)
+  * opens 8 apps one after another and keeps them all open (time until each window is on screen)
+  * with everything open: Start + search, dragging a window, Alt+Tab, desktop right-click, scrolling
+  * the whole time every window is pinged (_NET_WM_PING, what the window manager uses for "not responding"):
+    the slowest answer of each app is reported; 5 s without an answer = "not responding"
+  * interface freezes inside ESO's Python apps come from esohang ($XDG_RUNTIME_DIR/eso/hangs.log)
+Output: "ESO-UITEST ..." lines on stdout.
+"""
+import os, sys, time, threading, subprocess, collections
+
+from Xlib import X, Xatom, display, protocol, error
+
+OUT = []
+
+
+def say(s):
+    print("ESO-UITEST " + s, flush=True)
+
+
+def xdo(*a):
+    subprocess.run(["xdotool", *map(str, a)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+
+
+# ───────────────────────── CPU of every process ─────────────────────────
+HZ = os.sysconf("SC_CLK_TCK")
+
+
+def cpu_snapshot():
+    snap = {}
+    for p in os.listdir("/proc"):
+        if not p.isdigit():
+            continue
+        try:
+            st = open(f"/proc/{p}/stat").read()
+            comm = st[st.index("(") + 1:st.rindex(")")]
+            f = st[st.rindex(")") + 2:].split()
+            snap[int(p)] = (comm, int(f[11]) + int(f[12]))
+            try:
+                cmd = open(f"/proc/{p}/cmdline", "rb").read().split(b"\0")
+                if comm.startswith("python") and len(cmd) > 1:   # a Python app: name it by its script
+                    snap[int(p)] = (os.path.basename(cmd[1].decode(errors="replace")) or comm, snap[int(p)][1])
+            except OSError:
+                pass
+        except (OSError, ValueError, IndexError):
+            pass
+    return snap, time.monotonic()
+
+
+def cpu_report(label, a, b, top=8):
+    (s0, t0), (s1, t1) = a, b
+    dt = max(0.001, t1 - t0)
+    use = collections.Counter()
+    for pid, (comm, ticks) in s1.items():
+        before = s0[pid][1] if pid in s0 else 0          # a process started in between: all its CPU counts
+        use[comm] += (ticks - before) / HZ / dt * 100
+    total = sum(use.values())
+    ncpu = os.cpu_count() or 1
+    parts = ", ".join(f"{c} {v:.1f}%" for c, v in use.most_common(top) if v >= 0.1)
+    say(f"cpu {label}: total {total:.1f}% of one core ({total / ncpu:.1f}% of the machine, {ncpu} cores) | {parts or 'nothing'}")
+
+
+# ───────────────────────── windows + ping ─────────────────────────
+class Pinger(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.d = display.Display()
+        self.root = self.d.screen().root
+        self.root.change_attributes(event_mask=X.SubstructureNotifyMask)
+        self.A = {n: self.d.intern_atom(n) for n in ("_NET_CLIENT_LIST", "WM_PROTOCOLS", "_NET_WM_PING", "_NET_WM_NAME")}
+        self.out = {}                  # wid -> (serial, sent)
+        self.worst = collections.defaultdict(float)
+        self.count = collections.Counter()
+        self.unresp = collections.Counter()
+        self.names = {}
+        self.serial = 1
+        self.running = True
+        self.lock = threading.Lock()
+
+    def name(self, wid):
+        if wid in self.names:
+            return self.names[wid]
+        n = "?"
+        try:
+            w = self.d.create_resource_object("window", wid)
+            c = w.get_wm_class()
+            n = (c[0] if c else None) or "?"
+        except error.XError:
+            pass
+        self.names[wid] = n
+        return n
+
+    def clients(self):
+        try:
+            p = self.root.get_full_property(self.A["_NET_CLIENT_LIST"], Xatom.WINDOW)
+            return list(p.value) if p else []
+        except error.XError:
+            return []
+
+    def pingable(self, wid):
+        try:
+            w = self.d.create_resource_object("window", wid)
+            return self.A["_NET_WM_PING"] in (w.get_wm_protocols() or [])
+        except error.XError:
+            return False
+
+    def run(self):
+        ok = {}
+        while self.running:
+            now = time.monotonic()
+            for wid in self.clients():
+                if wid not in ok:
+                    ok[wid] = self.pingable(wid)
+                if not ok[wid]:
+                    continue
+                if wid in self.out:
+                    s, t = self.out[wid]
+                    if now - t > 5 and s > 0:
+                        self.unresp[self.name(wid)] += 1
+                        self.out[wid] = (-s, t)          # counted once per stall
+                    continue
+                self.serial += 1
+                try:
+                    w = self.d.create_resource_object("window", wid)
+                    ev = protocol.event.ClientMessage(window=w, client_type=self.A["WM_PROTOCOLS"],
+                                                      data=(32, [self.A["_NET_WM_PING"], self.serial, wid, 0, 0]))
+                    w.send_event(ev, event_mask=0)
+                    self.out[wid] = (self.serial, now)
+                except error.XError:
+                    pass
+            self.d.flush()
+            end = time.monotonic() + 0.1
+            while time.monotonic() < end:
+                while self.d.pending_events():
+                    e = self.d.next_event()
+                    if e.type == X.ClientMessage and e.client_type == self.A["WM_PROTOCOLS"]:
+                        fmt, data = e.data
+                        if data[0] == self.A["_NET_WM_PING"]:
+                            wid = data[2]
+                            if wid in self.out and abs(self.out[wid][0]) == data[1]:
+                                lat = (time.monotonic() - self.out[wid][1]) * 1000
+                                n = self.name(wid)
+                                with self.lock:
+                                    self.worst[n] = max(self.worst[n], lat)
+                                    self.count[n] += 1
+                                del self.out[wid]
+                time.sleep(0.005)
+
+
+def new_window(before, timeout=10.0):
+    d = display.Display()
+    root = d.screen().root
+    a = d.intern_atom("_NET_CLIENT_LIST")
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        p = root.get_full_property(a, Xatom.WINDOW)
+        now = set(p.value) if p else set()
+        diff = now - before
+        if diff:
+            return diff.pop()
+        time.sleep(0.02)
+    return None
+
+
+def client_set():
+    d = display.Display()
+    p = d.screen().root.get_full_property(d.intern_atom("_NET_CLIENT_LIST"), Xatom.WINDOW)
+    return set(p.value) if p else set()
+
+
+def main():
+    env = dict(os.environ)
+    hl = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "eso", "hangs.log")
+    try:
+        os.makedirs(os.path.dirname(hl), exist_ok=True)
+        open(hl, "a").close()
+        start_size = os.path.getsize(hl)
+    except OSError:
+        start_size = 0
+
+    # 1. idle
+    a = cpu_snapshot(); time.sleep(10); cpu_report("idle 10 s", a, cpu_snapshot())
+
+    pinger = Pinger(); pinger.start()
+
+    # 2. open apps, keep them open
+    t_all = cpu_snapshot()
+    apps = ["eso-files", "eso-settings", "eso-browser", "eso-store", "eso-cosmos", "eso-taskmgr", "eso-notepad", "eso-calc"]
+    opened = []
+    for app in apps:
+        before = client_set()
+        t0 = time.monotonic()
+        try:
+            subprocess.Popen([app], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        except OSError as e:
+            say(f"open {app}: cannot start ({e})"); continue
+        wid = new_window(before, 15)
+        if wid:
+            say(f"open {app}: window after {(time.monotonic() - t0) * 1000:.0f} ms ({len(before) + 1} windows open)")
+            opened.append((app, wid))
+        else:
+            say(f"open {app}: NO window within 15 s")
+        time.sleep(0.6)
+    cpu_report("while opening 8 apps", t_all, cpu_snapshot())
+
+    # 3. use it, everything open
+    t_use = cpu_snapshot()
+    t0 = time.monotonic()
+    xdo("key", "ctrl+Escape"); time.sleep(0.9)
+    xdo("type", "--delay", "60", "settings"); time.sleep(0.8)
+    xdo("key", "Escape"); time.sleep(0.5)
+    say(f"start menu + search: {(time.monotonic() - t0):.1f} s of actions")
+    # drag the active window by its title bar, 40 steps (~60 fps)
+    try:
+        g = subprocess.run(["xdotool", "getactivewindow", "getwindowgeometry", "--shell"], capture_output=True,
+                           text=True, timeout=5).stdout
+        geo = dict(l.split("=", 1) for l in g.split() if "=" in l)
+        x, y = int(geo.get("X", 200)) + 120, max(5, int(geo.get("Y", 200)) - 14)
+        t0 = time.monotonic()
+        xdo("mousemove", x, y); time.sleep(0.1); xdo("mousedown", 1)
+        for i in range(40):
+            xdo("mousemove", x + i * 12, y + i * 5); time.sleep(0.016)
+        xdo("mouseup", 1)
+        say(f"window drag: 40 steps in {(time.monotonic() - t0):.2f} s")
+    except Exception as e:
+        say(f"window drag: skipped ({e})")
+    for _ in range(6):
+        xdo("key", "alt+Tab"); time.sleep(0.35)
+    xdo("mousemove", 700, 400); xdo("click", 3); time.sleep(0.8); xdo("key", "Escape"); time.sleep(0.4)
+    for app, wid in opened:
+        if app in ("eso-files", "eso-settings", "eso-browser", "eso-store"):
+            xdo("windowactivate", "--sync", wid); time.sleep(0.3)
+            xdo("mousemove", 640, 420)
+            for _ in range(8):
+                xdo("click", 5); time.sleep(0.04)
+            time.sleep(0.4)
+    time.sleep(2)
+    cpu_report("using the desktop with 8 apps open", t_use, cpu_snapshot())
+    pinger.running = False; time.sleep(0.3)
+
+    with pinger.lock:
+        for n, v in sorted(pinger.worst.items(), key=lambda kv: -kv[1]):
+            say(f"response {n}: slowest {v:.0f} ms over {pinger.count[n]} pings" +
+                (f", NOT RESPONDING {pinger.unresp[n]}x" if pinger.unresp[n] else ""))
+        for n, c in pinger.unresp.items():
+            if n not in pinger.worst:
+                say(f"response {n}: never answered, NOT RESPONDING {c}x")
+
+    # 4. freezes inside ESO apps
+    try:
+        with open(hl) as fh:
+            fh.seek(start_size if start_size <= os.path.getsize(hl) else 0)
+            lines = [l.strip() for l in fh if l.strip()]
+        # include freezes from before (shell start-up etc.)
+        with open(hl) as fh:
+            all_lines = [l.strip() for l in fh if l.strip()]
+    except OSError:
+        lines, all_lines = [], []
+    say(f"freezes: {len(all_lines)} interface stalls over 100 ms in ESO apps since login ({len(lines)} during this test)")
+    def ms(l):
+        try:
+            return int(l.split("ms", 1)[0])
+        except ValueError:
+            return 0
+    for l in sorted(all_lines, key=ms, reverse=True)[:25]:
+        say("freeze " + l[:260])
+
+    # 5. memory with everything open
+    try:
+        mem = {k: int(v.split()[0]) for k, v in (l.split(":", 1) for l in open("/proc/meminfo"))}
+        say(f"memory with 8 apps open: used {(mem['MemTotal'] - mem['MemAvailable']) // 1024} MiB")
+    except Exception:
+        pass
+    for app, wid in opened:
+        xdo("windowclose", wid)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        say(f"ERROR {e}")
+        traceback.print_exc()
