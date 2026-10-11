@@ -31,6 +31,16 @@ sp=$(pgrep -f "bin/eso-shell( |$)" | head -n1)
 systemd-analyze blame 2>/dev/null | head -n 8 | sed 's/^ */ESO-SELFTEST slowest: /'
 echo "ESO-SELFTEST setuid: $(find /usr -xdev -perm -4000 -type f 2>/dev/null | sed 's|.*/||' | sort | tr '\n' ' ')"
 # ESO Lock: the real PAM check as the live user (no password: Enter unlocks)
+# boot timeline around the hand-over from the boot animation to the desktop (seconds since boot)
+eu=$(id -u eso 2>/dev/null)
+xl=$(ls -t /home/eso/.local/share/xorg/Xorg.*.log /var/log/Xorg.0.log 2>/dev/null | head -n1)
+if [[ -n $xl ]]; then
+    grep -m1 -E '^\[ *[0-9.]+\]' "$xl" | sed 's/^\[ *\([0-9.]*\)\].*/ESO-SELFTEST timeline: \1 Xorg log starts/'
+    grep -E 'glamor|Output .* connected|Setting mode|modeset\(0\): Modeline|xkb|evdev|libinput|AIGLX|Initializing extension GLX' "$xl" | grep -E '^\[ *[0-9.]+\]' | head -n 14 | sed 's/^\[ *\([0-9.]*\)\] */ESO-SELFTEST timeline: \1 X: /'
+    tail -n 3 "$xl" | sed 's/^/ESO-SELFTEST xorg-tail: /'
+fi
+[[ -n $eu && -r /run/user/$eu/eso-rootpaint.t ]] && echo "ESO-SELFTEST timeline: $(cat /run/user/$eu/eso-rootpaint.t) wallpaper painted"
+journalctl -b -o short-monotonic --no-pager 2>/dev/null | grep -E 'eso-session@eso|plymouth-quit|Starting .*session|Reached target graphical' | head -n 6 | sed 's/^/ESO-SELFTEST timeline-j: /'
 [[ -x /usr/libexec/eso-pamtest ]] && echo "ESO-SELFTEST lock-pam: $(cd /tmp && asuser_plain eso python3 /usr/libexec/eso-pamtest eso-lock '' 2>&1 | tail -n1)"
 # ESO updates on ESO Base: a real signed check against the live ESO update server (installs nothing)
 if [[ -x /usr/local/libexec/eso-update ]]; then

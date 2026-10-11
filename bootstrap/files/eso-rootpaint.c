@@ -131,5 +131,13 @@ int main(int argc, char **argv)
     XClearWindow(keep, root);
     XFlush(keep); XSync(keep, False);
     XCloseDisplay(keep); XCloseDisplay(dpy);
+    /* when it was painted (seconds since boot), for the boot timeline in eso-selftest */
+    const char *rt = getenv("XDG_RUNTIME_DIR");
+    if (rt) {
+        char p[512], up[64] = ""; FILE *u = fopen("/proc/uptime", "r");
+        if (u) { if (!fgets(up, sizeof up, u)) up[0] = 0; fclose(u); }
+        snprintf(p, sizeof p, "%s/eso-rootpaint.t", rt);
+        FILE *o = fopen(p, "w"); if (o) { fprintf(o, "%.*s\n", (int)strcspn(up, " "), up); fclose(o); }
+    }
     return 0;
 }
