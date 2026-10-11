@@ -36,8 +36,8 @@ eu=$(id -u eso 2>/dev/null)
 xl=$(ls -t /home/eso/.local/share/xorg/Xorg.*.log /var/log/Xorg.0.log 2>/dev/null | head -n1)
 if [[ -n $xl ]]; then
     grep -m1 -E '^\[ *[0-9.]+\]' "$xl" | sed 's/^\[ *\([0-9.]*\)\].*/ESO-SELFTEST timeline: \1 Xorg log starts/'
-    grep -E 'glamor|Output .* connected|Setting mode|modeset\(0\): Modeline|xkb|evdev|libinput|AIGLX|Initializing extension GLX' "$xl" | grep -E '^\[ *[0-9.]+\]' | head -n 14 | sed 's/^\[ *\([0-9.]*\)\] */ESO-SELFTEST timeline: \1 X: /'
-    tail -n 3 "$xl" | sed 's/^/ESO-SELFTEST xorg-tail: /'
+    grep -E '^\[ *[0-9.]+\]' "$xl" | grep -v -E 'Modeline|^\[ *[0-9.]+\] +(\(--\)|\(==\)|\(II\) +(Loading|Module|LoadModule|UnloadModule|Initializing extension|Matched|Applying))' \
+        | head -n 90 | sed 's/^\[ *\([0-9.]*\)\] */ESO-SELFTEST xorg: \1 /'
 fi
 [[ -n $eu && -r /run/user/$eu/eso-rootpaint.t ]] && echo "ESO-SELFTEST timeline: $(cat /run/user/$eu/eso-rootpaint.t) wallpaper painted"
 journalctl -b -o short-monotonic --no-pager 2>/dev/null | grep -E 'eso-session@eso|plymouth-quit|Starting .*session|Reached target graphical' | head -n 6 | sed 's/^/ESO-SELFTEST timeline-j: /'
