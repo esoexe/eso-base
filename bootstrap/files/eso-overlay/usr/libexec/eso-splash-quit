@@ -6,11 +6,11 @@
 command -v plymouth >/dev/null 2>&1 || exit 0
 plymouth --ping 2>/dev/null || exit 0
 i=0
-while [ $i -lt 250 ]; do                       # 25 s in 0.1 s steps
+while [ $i -lt 500 ]; do                       # 25 s in 0.05 s steps
     if [ -S /tmp/.X11-unix/X0 ] && { pgrep -x eso-shell >/dev/null 2>&1 || pgrep -f "bin/eso-shell( |$)" >/dev/null 2>&1; }; then
-        sleep 0.4; plymouth quit --retain-splash; exit 0
+        plymouth quit --retain-splash; exit 0
     fi
-    sleep 0.1; i=$((i + 1))
+    sleep 0.05; i=$((i + 1))
 done
 if [ -S /tmp/.X11-unix/X0 ]; then plymouth quit --retain-splash; else plymouth quit; fi
 exit 0

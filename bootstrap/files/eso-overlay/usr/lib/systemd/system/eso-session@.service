@@ -29,8 +29,10 @@ TTYVTDisallocate=no
 UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user XDG_SEAT=seat0 XDG_VTNR=1
-# "+": as root. The animation stops on its last frame; that frame stays on the screen until X draws.
-ExecStartPre=+-/usr/bin/plymouth quit --retain-splash
+# "+": as root. "deactivate" (as GDM does it): the animation freezes on its last frame and hands the display to X,
+# but the frame stays on screen while X starts. "quit" here made the screen black for the whole X start-up
+# (~0.9 s). eso-splash-quit ends plymouth once X and the ESO shell are up (the wallpaper is drawn by then).
+ExecStartPre=+-/usr/bin/plymouth deactivate
 ExecStart=/usr/libexec/eso-session-run
 Restart=always
 RestartSec=1
