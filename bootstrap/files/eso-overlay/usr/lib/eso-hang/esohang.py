@@ -48,7 +48,7 @@ def _beat():
 
 def _watch(main_id):
     from gi.repository import GLib
-    GLib.timeout_add(20, _beat, priority=GLib.PRIORITY_DEFAULT)
+    GLib.timeout_add(20, _beat)                           # PRIORITY_DEFAULT (PyGObject 3.54 rejects priority=)
     stalled_since, samples = None, collections.Counter()
     while True:
         time.sleep(0.025)

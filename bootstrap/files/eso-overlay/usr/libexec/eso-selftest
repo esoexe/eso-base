@@ -107,6 +107,10 @@ if [[ -S /tmp/.X11-unix/X0 && -x /usr/libexec/eso-uitest ]]; then
     asuser env ESO_HANGLOG=1 PYTHONPATH=/usr/lib/eso-hang timeout 240 python3 /usr/libexec/eso-uitest 2>&1 \
         | sed -n 's/^ESO-UITEST /ESO-SELFTEST ui: /p; /Traceback\|Error/s/^/ESO-SELFTEST ui-err: /p' | head -n 80
 fi
+# the shell's self-heal: desktop/taskbar re-mapped because they were unmapped or not adopted by the window manager
+hl=$(ls /run/user/*/eso/shell-heal.log 2>/dev/null | head -n1)
+if [[ -s $hl ]]; then echo "ESO-SELFTEST shell-heal: $(wc -l <"$hl") re-maps"; sed 's/^/ESO-SELFTEST shell-heal: /' "$hl" | head -n 12
+else echo "ESO-SELFTEST shell-heal: none needed"; fi
 echo "ESO-SELFTEST system-state: $(systemctl is-system-running 2>/dev/null)"
 systemctl list-jobs --no-legend --plain 2>/dev/null | head -10 | sed 's/^/ESO-SELFTEST waiting-job: /'
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
