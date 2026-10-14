@@ -378,6 +378,28 @@ for line in open(os.path.join(src, "WHENCE"), errors="replace"):
     if os.path.exists(full) and not os.path.lexists(os.path.join(dst, link)):
         os.makedirs(os.path.dirname(os.path.join(dst, link)), exist_ok=True)
         os.symlink(target, os.path.join(dst, link)); links += 1
+# trim: only what a PC can use. Intel Wi-Fi: newest API version per chip (the kernel loads the highest it knows);
+# no router-only Qualcomm chips (IPQ/QCN/QCA99xx/40xx) and no phone/Chromebook MediaTek SoC firmware (mt8xxx).
+import glob
+best = {}
+for f in glob.glob(dst + "/iwlwifi-*.ucode"):
+    m = re.match(r"(.*)-(\d+)\.ucode$", os.path.basename(f))
+    if m:
+        best.setdefault(m.group(1), []).append((int(m.group(2)), f))
+pruned = 0
+for k, v in best.items():
+    for _, f in sorted(v)[:-1]:
+        os.remove(f); pruned += 1
+for pat in ("ath1[012]k/IPQ*", "ath1[012]k/QCN*", "ath10k/QCA99*", "ath10k/QCA4019", "ath10k/QCA9888", "ath10k/QCA9984",
+            "mediatek/mt8[0-9]*", "mediatek/sof*"):
+    for d in glob.glob(os.path.join(dst, pat)):
+        shutil.rmtree(d) if os.path.isdir(d) and not os.path.islink(d) else os.remove(d); pruned += 1
+for root, dirs, files in os.walk(dst):                     # aliases whose target was trimmed
+    for f in files + dirs:
+        q = os.path.join(root, f)
+        if os.path.islink(q) and not os.path.exists(q):
+            os.remove(q)
+print(f"  trimmed {pruned} old/unneeded entries")
 os.makedirs("/usr/share/licenses/linux-firmware", exist_ok=True)
 for f in os.listdir(src):
     if f.startswith(("LICEN", "GPL")) or f == "WHENCE":
@@ -389,6 +411,7 @@ for f in os.listdir(src):
 print(f"  {n} firmware files, {links} aliases")
 PY
 rm -rf /sources/fw "/sources/linux-firmware-$V_linuxfirmware.tar.xz"
+du -sh /usr/lib/firmware/* 2>/dev/null | sort -rh | head -12 | sed 's|/usr/lib/firmware/||; s/^/  size /'
 for d in amdgpu radeon i915 xe nvidia rtl_nic rtw89 mediatek; do printf '  %-9s %s\n' "$d" "$(du -sh /usr/lib/firmware/$d 2>/dev/null | cut -f1)"; done
 echo "  iwlwifi: $(ls /usr/lib/firmware/iwlwifi-* 2>/dev/null | wc -l) files; total $(du -sh /usr/lib/firmware | cut -f1)"
 ls /usr/lib/firmware/amdgpu/*.bin >/dev/null 2>&1 && ls /usr/lib/firmware/i915/*.bin >/dev/null 2>&1 \
