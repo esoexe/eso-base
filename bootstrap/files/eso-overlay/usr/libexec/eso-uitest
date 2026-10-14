@@ -238,6 +238,54 @@ def main():
             time.sleep(0.4)
     time.sleep(2)
     cpu_report("using the desktop with 8 apps open", t_use, cpu_snapshot())
+
+    # 3b. the desktop restarts (what an update / Ultimate activation does) while a window is dragged around:
+    #     3.13.1 hands over seamlessly, so desktop + taskbar must never be missing and nothing may leave trails
+    try:
+        d = display.Display()
+        root = d.screen().root
+        wm_class = d.intern_atom("WM_CLASS")
+
+        def shell_visible():
+            have = set()
+            def walk(w, depth=0):
+                try:
+                    for c in w.query_tree().children:
+                        try:
+                            if c.get_attributes().map_state == X.IsViewable:
+                                cl = c.get_full_property(wm_class, Xatom.STRING)
+                                if cl and cl.value:
+                                    v = cl.value.split(b"\0")[0].decode(errors="replace")
+                                    if v in ("eso-desktop", "eso-taskbar"):
+                                        have.add(v)
+                        except error.XError:
+                            pass
+                        if depth < 1:
+                            walk(c, depth + 1)
+                except error.XError:
+                    pass
+            walk(root)
+            return have
+        old = subprocess.run(["pgrep", "-f", "bin/eso-shell( |$)"], capture_output=True, text=True).stdout.split()
+        subprocess.run(["eso-shell", "restart"], timeout=10)
+        t0 = time.monotonic(); gap_d = gap_t = 0.0; last = t0; steps = 0
+        tgt = next((w for a2, w in opened if a2 == "eso-notepad"), opened[-1][1] if opened else None)
+        while time.monotonic() - t0 < 8:
+            v = shell_visible(); now = time.monotonic()
+            if "eso-desktop" not in v:
+                gap_d += now - last
+            if "eso-taskbar" not in v:
+                gap_t += now - last
+            last = now
+            if tgt is not None:                           # keep a window moving the whole time
+                xdo("windowmove", tgt, 80 + (steps * 37) % 700, 60 + (steps * 23) % 300)
+                steps += 1
+            time.sleep(0.03)
+        new = subprocess.run(["pgrep", "-f", "bin/eso-shell( |$)"], capture_output=True, text=True).stdout.split()
+        say(f"desktop restart while dragging: desktop missing {gap_d * 1000:.0f} ms, taskbar missing {gap_t * 1000:.0f} ms, "
+            f"shell pid {' '.join(old)} -> {' '.join(new)} ({len(new)} running), {steps} window moves")
+    except Exception as e:
+        say(f"desktop restart test: skipped ({e})")
     pinger.running = False; time.sleep(0.3)
 
     with pinger.lock:
