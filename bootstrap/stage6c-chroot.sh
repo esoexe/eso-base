@@ -381,7 +381,11 @@ for line in open(os.path.join(src, "WHENCE"), errors="replace"):
 os.makedirs("/usr/share/licenses/linux-firmware", exist_ok=True)
 for f in os.listdir(src):
     if f.startswith(("LICEN", "GPL")) or f == "WHENCE":
-        shutil.copy2(os.path.join(src, f), "/usr/share/licenses/linux-firmware/")
+        p = os.path.join(src, f)
+        if os.path.isdir(p):
+            shutil.copytree(p, os.path.join("/usr/share/licenses/linux-firmware", f), dirs_exist_ok=True)
+        else:
+            shutil.copy2(p, "/usr/share/licenses/linux-firmware/")
 print(f"  {n} firmware files, {links} aliases")
 PY
 rm -rf /sources/fw "/sources/linux-firmware-$V_linuxfirmware.tar.xz"
