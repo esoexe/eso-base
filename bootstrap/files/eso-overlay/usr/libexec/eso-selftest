@@ -86,12 +86,14 @@ os.environ.update(HOME=p.pw_dir,USER=p.pw_name,LOGNAME=p.pw_name,XDG_RUNTIME_DIR
   DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/%d/bus" % p.pw_uid,
   PATH=p.pw_dir+"/.local/bin:/usr/local/bin:/usr/bin:/usr/sbin")
 os.execvp(sys.argv[1],sys.argv[1:])' "$@"; }
-wins() { wmctrl -l 2>/dev/null | awk '{print $1}' | sort; }
+# window ids of ONE app (WM_CLASS = the app name): the check must never close the desktop or the taskbar - the
+# old "first new window in the list" closed the taskbar when the window manager adopted it late (CI icons bug)
+wins() { wmctrl -lx 2>/dev/null | awk -v a="$1" 'tolower($3) ~ "^" a "\\." {print $1}' | sort; }
 if [[ -S /tmp/.X11-unix/X0 ]] && command -v wmctrl >/dev/null; then
     for app in eso-files eso-settings eso-notepad eso-taskmgr eso-calc eso-browser; do
-        before=$(wins); t0=$(date +%s%N); asuser "$app" >/dev/null 2>&1 & id=""
+        before=$(wins "$app"); t0=$(date +%s%N); asuser "$app" >/dev/null 2>&1 & id=""
         for i in $(seq 1 200); do
-            sleep 0.05; id=$(comm -13 <(echo "$before") <(wins) | head -1); [[ -n $id ]] && break
+            sleep 0.05; id=$(comm -13 <(echo "$before") <(wins "$app") | head -1); [[ -n $id ]] && break
         done
         t1=$(date +%s%N)
         if [[ -n $id ]]; then echo "ESO-SELFTEST app-launch: $app window after $(( (t1 - t0) / 1000000 )) ms"

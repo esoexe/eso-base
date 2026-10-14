@@ -149,6 +149,9 @@ class Pinger(threading.Thread):
                 time.sleep(0.005)
 
 
+SHELL_CLASSES = {"eso-desktop", "eso-taskbar", "eso-start", "eso-taskview"}
+
+
 def new_window(before, timeout=10.0):
     d = display.Display()
     root = d.screen().root
@@ -158,8 +161,15 @@ def new_window(before, timeout=10.0):
         p = root.get_full_property(a, Xatom.WINDOW)
         now = set(p.value) if p else set()
         diff = now - before
-        if diff:
-            return diff.pop()
+        for w in diff:                                   # never the shell's own windows (desktop/taskbar adopted late)
+            try:
+                c = d.create_resource_object("window", w).get_wm_class()
+            except error.XError:
+                continue
+            if c and c[0] in SHELL_CLASSES:
+                before.add(w)
+                continue
+            return w
         time.sleep(0.02)
     return None
 
