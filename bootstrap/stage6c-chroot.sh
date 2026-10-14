@@ -346,4 +346,48 @@ sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name="__main__")' "$f" 
     rm -rf /home/eso/.cache; chown -R eso: /home/eso
     [[ $bad = 0 ]] || { echo "FAILED: an ESO app did not start"; exit 1; }
 fi
+# ───────────────────────────── device firmware ─────────────────────────────
+# Without it AMD Radeon GPUs do not start at all (and NVIDIA/newer Intel get no acceleration): the desktop then runs
+# on the plain firmware framebuffer, fixed at one mode, every pixel drawn by the CPU - the whole OS lags. Same for
+# most Wi-Fi/Bluetooth chips and Realtek Ethernet. Installed uncompressed (works with every kernel; the ISO's
+# squashfs compresses it). NVIDIA GSP blobs (RTX 20+ on nouveau, ~300 MB) are left out: those PCs use NVIDIA's driver.
+step "linux-firmware $V_linuxfirmware: GPU (AMD, Intel, NVIDIA), Wi-Fi, Ethernet, Bluetooth"
+rm -rf /sources/fw; mkdir -p /sources/fw
+FWSEL=(WHENCE 'LICEN[CS]E*' 'GPL*' amdgpu radeon i915 xe nvidia 'iwlwifi-*' intel/ibt-'*' rtl_nic rtw88 rtw89 rtl_bt rtlwifi
+       ath10k ath11k ath12k ath9k_htc mediatek 'mt7*' qca brcm 'rt2*' 'rt3*' 'rt5*' cypress)
+tar -xf "/sources/linux-firmware-$V_linuxfirmware.tar.xz" -C /sources/fw --strip-components=1 --wildcards \
+    --exclude='*/gsp/*' "${FWSEL[@]/#/*/}" 2>/dev/null || true
+[[ -f /sources/fw/WHENCE ]] || { echo "FAILED: linux-firmware did not unpack"; exit 1; }
+python3 - <<'PY'
+import os, re, shutil
+src, dst = "/sources/fw", "/usr/lib/firmware"
+n = links = 0
+for root, dirs, files in os.walk(src):
+    for f in files:
+        rel = os.path.relpath(os.path.join(root, f), src)
+        if rel in ("WHENCE",) or rel.startswith(("LICEN", "GPL")) or rel.endswith((".py", ".sh", ".txt", ".md")):
+            continue
+        os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
+        shutil.copy2(os.path.join(root, f), os.path.join(dst, rel)); n += 1
+for line in open(os.path.join(src, "WHENCE"), errors="replace"):
+    m = re.match(r"^Link:\s*(\S+)\s*->\s*(\S+)", line)
+    if not m:
+        continue
+    link, target = m.group(1), m.group(2)
+    full = os.path.normpath(os.path.join(dst, os.path.dirname(link), target))
+    if os.path.exists(full) and not os.path.lexists(os.path.join(dst, link)):
+        os.makedirs(os.path.dirname(os.path.join(dst, link)), exist_ok=True)
+        os.symlink(target, os.path.join(dst, link)); links += 1
+os.makedirs("/usr/share/licenses/linux-firmware", exist_ok=True)
+for f in os.listdir(src):
+    if f.startswith(("LICEN", "GPL")) or f == "WHENCE":
+        shutil.copy2(os.path.join(src, f), "/usr/share/licenses/linux-firmware/")
+print(f"  {n} firmware files, {links} aliases")
+PY
+rm -rf /sources/fw "/sources/linux-firmware-$V_linuxfirmware.tar.xz"
+for d in amdgpu radeon i915 xe nvidia rtl_nic rtw89 mediatek; do printf '  %-9s %s\n' "$d" "$(du -sh /usr/lib/firmware/$d 2>/dev/null | cut -f1)"; done
+echo "  iwlwifi: $(ls /usr/lib/firmware/iwlwifi-* 2>/dev/null | wc -l) files; total $(du -sh /usr/lib/firmware | cut -f1)"
+ls /usr/lib/firmware/amdgpu/*.bin >/dev/null 2>&1 && ls /usr/lib/firmware/i915/*.bin >/dev/null 2>&1 \
+    || { echo "FAILED: GPU firmware missing"; exit 1; }
+
 step "stage 6c done"; du -sh /usr /usr/share/eso /etc/skel

@@ -39,7 +39,7 @@ insmod all_video
 if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1024x768,auto; fi
 search --no-floppy --label ESO-ROOT --set=root
 menuentry "ESO OS" {
-    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0
+    linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro preempt=full quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img-$KV
 }
 G

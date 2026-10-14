@@ -164,6 +164,36 @@ def new_window(before, timeout=10.0):
     return None
 
 
+def stacking(tag):
+    """Window stacking bottom -> top (the window manager's list) + whether the desktop is still at the bottom and
+    mapped: catches anything that hides the desktop icons behind / above other windows."""
+    try:
+        d = display.Display(); root = d.screen().root
+        st = root.get_full_property(d.intern_atom("_NET_CLIENT_LIST_STACKING"), Xatom.WINDOW)
+        wm_class = d.intern_atom("WM_CLASS")
+        names, desk_pos, desk_mapped = [], None, None
+        sw, sh = d.screen().width_in_pixels, d.screen().height_in_pixels
+        big = []
+        for i, wid in enumerate(st.value if st else []):
+            w = d.create_resource_object("window", wid)
+            try:
+                cl = w.get_full_property(wm_class, Xatom.STRING)
+                n = cl.value.split(b"\0")[0].decode(errors="replace") if cl and cl.value else hex(wid)
+                attrs = w.get_attributes()
+                g = w.get_geometry()
+            except error.XError:
+                continue
+            if n == "eso-desktop":
+                desk_pos, desk_mapped = i, attrs.map_state == X.IsViewable
+            elif g.width >= sw * 0.95 and g.height >= sh * 0.9:
+                big.append(n)
+            names.append(n)
+        say(f"stacking {tag}: desktop at {desk_pos} mapped={desk_mapped}; fullscreen-size above it: {big or 'none'}; "
+            f"bottom->top {' < '.join(names)[:400]}")
+    except Exception as e:  # noqa: BLE001
+        say(f"stacking {tag}: n/a ({e})")
+
+
 def client_set():
     d = display.Display()
     p = d.screen().root.get_full_property(d.intern_atom("_NET_CLIENT_LIST"), Xatom.WINDOW)
@@ -200,6 +230,7 @@ def main():
         if wid:
             say(f"open {app}: window after {(time.monotonic() - t0) * 1000:.0f} ms ({len(before) + 1} windows open)")
             opened.append((app, wid))
+            time.sleep(0.4); stacking(f"after {app}")
         else:
             say(f"open {app}: NO window within 15 s")
         time.sleep(0.6)
@@ -282,6 +313,7 @@ def main():
                 steps += 1
             time.sleep(0.03)
         new = subprocess.run(["pgrep", "-f", "bin/eso-shell( |$)"], capture_output=True, text=True).stdout.split()
+        stacking("after the desktop restart")
         say(f"desktop restart while dragging: desktop missing {gap_d * 1000:.0f} ms, taskbar missing {gap_t * 1000:.0f} ms, "
             f"shell pid {' '.join(old)} -> {' '.join(new)} ({len(new)} running), {steps} window moves")
     except Exception as e:

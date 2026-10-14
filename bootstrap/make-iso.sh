@@ -80,7 +80,7 @@ insmod all_video
 # the boot animation needs a graphics mode handed to the kernel: UEFI keeps the firmware's (GOP) mode, BIOS asks VESA
 if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1024x768,auto; fi
 menuentry "$NAME" {
-    linux /boot/vmlinuz eso.live eso.label=$LABEL $SPLASHARGS console=ttyS0,115200 console=tty0
+    linux /boot/vmlinuz eso.live eso.label=$LABEL preempt=full $SPLASHARGS console=ttyS0,115200 console=tty0
     initrd /boot/initrd.img
 }
 G

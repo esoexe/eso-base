@@ -25,6 +25,10 @@ for x in Xorg xfwm4 eso-shell eso-lite-session; do
 done
 echo "ESO-SELFTEST session: eso-session@eso=$(systemctl is-active eso-session@eso.service 2>/dev/null) greetd=$(systemctl is-active greetd.service 2>/dev/null) vt=$(cat /sys/class/tty/tty0/active 2>/dev/null)"
 # boot speed: firmware/loader (when known) + kernel + initramfs + system, and when the desktop (eso-shell) started
+# 3.13.2 responsiveness: Ultra hardware mode, preemption, firmware, app preloader
+echo "ESO-SELFTEST latency: $(/usr/local/libexec/eso-latency --print 2>/dev/null | tr '\n' ' ') service=$(systemctl is-active eso-latency.service 2>/dev/null) cmdline-preempt=$(grep -o 'preempt=[a-z]*' /proc/cmdline)"
+echo "ESO-SELFTEST firmware: $(find /usr/lib/firmware -type f 2>/dev/null | wc -l) files, $(du -sh /usr/lib/firmware 2>/dev/null | cut -f1); amdgpu=$(ls /usr/lib/firmware/amdgpu 2>/dev/null | wc -l) i915=$(ls /usr/lib/firmware/i915 2>/dev/null | wc -l); load-failures=$(journalctl -k -b 2>/dev/null | grep -ci 'firmware.*fail\|failed to load firmware')"
+echo "ESO-SELFTEST appd: $(pgrep -x eso-appd >/dev/null && echo running || echo off) ($(awk '/^Pss:/{s+=$2} END{printf "%.1f MiB", s/1024}' /proc/$(pgrep -x eso-appd | head -1)/smaps_rollup 2>/dev/null))"
 echo "ESO-SELFTEST boot-time: $(systemd-analyze time 2>/dev/null | head -n1 | sed 's/^Startup finished in //')"
 sp=$(pgrep -f "bin/eso-shell( |$)" | head -n1)
 [[ -n $sp ]] && echo "ESO-SELFTEST desktop-at: $(awk -v up="$(cut -d' ' -f1 /proc/uptime)" -v et="$(ps -o etimes= -p "$sp" | tr -d ' ')" 'BEGIN{printf "%.1f", up-et}') s after the kernel started"
