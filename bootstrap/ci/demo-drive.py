@@ -83,8 +83,10 @@ def key(*names, hold=0.06):
 
 def type_text(s, gap=0.07):
     names = {" ": "spc", "\n": "ret", "-": "minus", ".": "dot", "/": "slash", ";": "semicolon", ",": "comma",
-             "=": "equal"}
-    shifted = {"$": "4", "_": "minus", ":": "semicolon", "|": "backslash", ">": "dot"}
+             "=": "equal", "'": "apostrophe", "[": "bracket_left", "]": "bracket_right"}
+    shifted = {"$": "4", "_": "minus", ":": "semicolon", "|": "backslash", ">": "dot", "(": "9", ")": "0",
+               "*": "8", "+": "equal", '"': "apostrophe", "<": "comma", "{": "bracket_left", "}": "bracket_right",
+               "!": "1", "&": "7", "#": "3", "%": "5"}
     for ch in s:
         if ch.isupper():
             key("shift", ch.lower())
@@ -147,8 +149,18 @@ def changed(a, b):
     return d / max(1, n)
 
 
+def mice():
+    """which QEMU mouse gets button events right now (the 'current' one)"""
+    try:
+        return ", ".join(f"{m['name']}{'*' if m.get('current') else ''}{'(abs)' if m.get('absolute') else ''}"
+                         for m in q.cmd("query-mice"))
+    except Exception as e:                               # noqa: BLE001
+        return f"query-mice failed: {e}"
+
+
 def drag_window(grab, path, secs, name):
     """move the window smoothly; verify it really moved, else try Alt+drag, then the keyboard move"""
+    log(f"drag {name}: mice = {mice()}")
     before = ppm(name + "-a")
     end = path[-1]
     title_drag(grab, path, secs)
@@ -188,6 +200,45 @@ if os.environ.get("DEMO_PHASE") == "diag":
     key("meta_l", "ret"); time.sleep(3)
     type_text("id; grep Cap /proc/$$/status; ps -o user,pid,ppid,comm -p $$,$PPID\n"); time.sleep(2)
     shot("90-diag-terminal")
+    sys.exit(0)
+PROBE = """python3 -c "import glob,select,struct,time
+fs={open(p,'rb',buffering=0):p for p in glob.glob('/dev/input/event*')}
+nm=lambda p:open('/sys/class/input/'+p[11:]+'/device/name').read().strip()
+t=time.time()+9
+while time.time()<t:
+ for f in select.select(list(fs),[],[],0.3)[0]:
+  s,u,ty,c,v=struct.unpack('llHHi',f.read(24))
+  if ty==1 and c in (272,273):print('BUTTON',c,v,'from',fs[f],nm(fs[f]))
+print('probe done')"
+"""
+GRAB = """python3 -c "import gi;gi.require_version('Gtk','3.0');from gi.repository import Gtk,Gdk;s=Gdk.Display.get_default().get_default_seat();r=s.grab(Gdk.get_default_root_window(),Gdk.SeatCapabilities.POINTER,False,None,None,None,None);print('X POINTER GRAB TEST:',r.value_nick)"
+"""
+if os.environ.get("DEMO_PHASE") == "bootdiag":
+    # why the first title-bar drag after boot did nothing: QEMU mouse routing, or an X pointer grab in ESO?
+    log("boot diagnostics; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    log(f"mice at the desktop: {mice()}")
+    SETUP_T = (900, 231)
+    drag_window(SETUP_T, [(SETUP_T[0] - 300, SETUP_T[1] + 150), (SETUP_T[0] - 380, SETUP_T[1] + 200)], 1.5, "setup1")
+    shot("80-after-first-drag")
+    key("meta_l", "ret"); wait(3)
+    type_text("findmnt -no FSTYPE,SIZE /tmp; uptime\n"); wait(1)
+    type_text(GRAB); wait(3)
+    type_text(PROBE); wait(1.5)
+    for i in range(3):                                   # clicks on the empty desktop corner while the probe listens
+        click(1500, 900 - 40 * i, 0.4); wait(0.8)
+    log(f"mice after the clicks: {mice()}")
+    wait(5)
+    shot("81-probe")
+    key("ctrl", "esc"); wait(1.5); key("esc"); wait(1)
+    log(f"mice after Start: {mice()}")
+    key("meta_l", "ret"); wait(3)
+    type_text(GRAB); wait(3)
+    type_text(PROBE); wait(1.5)
+    for i in range(3):
+        click(1500, 900 - 40 * i, 0.4); wait(0.8)
+    wait(5)
+    shot("82-probe-after-start")
     sys.exit(0)
 log("connected; waiting for the desktop")
 cx, cy = W // 2, H // 2

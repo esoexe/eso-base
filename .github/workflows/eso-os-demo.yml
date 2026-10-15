@@ -5,6 +5,9 @@ on:
       boot_wait:
         description: "seconds from power-on before the demo starts"
         default: "38"
+      phase:
+        description: "demo = the recording; bootdiag = input diagnostics right after boot"
+        default: "demo"
 permissions:
   actions: read
   contents: read
@@ -49,10 +52,10 @@ jobs:
             -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
             -display sdl,show-cursor=off -full-screen -serial file:boot.log -qmp unix:qmp.sock,server,nowait -no-reboot & q=$!
           sleep 1
-          python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee drive.log
+          DEMO_PHASE="${{ github.event.inputs.phase }}" python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee drive.log
           sleep 1; kill -INT $ff 2>/dev/null || true; wait $ff 2>/dev/null || true
           # not recorded: a quick diagnostic inside the VM (screenshots only)
-          DEMO_PHASE=diag python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee -a drive.log || true
+          [ "${{ github.event.inputs.phase }}" = bootdiag ] || DEMO_PHASE=diag python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee -a drive.log || true
           kill $q 2>/dev/null || true; sleep 1; kill $xv 2>/dev/null || true
           ffmpeg -loglevel error -y -i demo-raw.mp4 -c:v libx264 -preset slow -crf 23 -pix_fmt yuv420p -movflags +faststart eso-os-demo-1080p.mp4
           ffprobe -v error -show_entries format=duration,size:stream=r_frame_rate,width,height -of compact eso-os-demo-1080p.mp4
