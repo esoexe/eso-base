@@ -2,7 +2,7 @@
 greetd 0.10.3 https://git.sr.ht/~kennylevinsen/greetd/archive/0.10.3.tar.gz
 tuigreet 0.9.1 https://github.com/apognu/tuigreet/archive/refs/tags/0.9.1.tar.gz
 nerdfont 3.5.1 https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/JetBrainsMono.tar.xz
-esodesktop 3.13.14 https://esoos.dpdns.org/updates/apt/pool/main/e/eso-desktop/eso-desktop_3.13.14_all.deb
+esodesktop 3.13.15 https://esoos.dpdns.org/updates/apt/pool/main/e/eso-desktop/eso-desktop_3.13.15_all.deb
 python 3.13.7 https://www.python.org/ftp/python/3.13.7/Python-3.13.7.tar.xz
 linuxfirmware 20260916 https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20260916.tar.xz
 libev 4.33 http://dist.schmorp.de/libev/libev-4.33.tar.gz
