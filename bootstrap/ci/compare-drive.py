@@ -55,7 +55,7 @@ def key(*names, hold=0.06):
 
 
 def type_text(s):
-    names = {" ": "spc", "\n": "ret", "-": "minus"}
+    names = {" ": "spc", "\n": "ret", "-": "minus", "/": "slash", ".": "dot", ";": "semicolon"}
     for ch in s:
         key(names.get(ch, ch)); time.sleep(0.04)
 
@@ -93,15 +93,52 @@ def open_latency(name, *keys):
     return first, settled
 
 
-burst = {"on": False, "n": 0}
+burst = {"on": False, "n": 0, "tag": "", "t": [], "h": []}
 
 
 def burster():
-    i = 0
+    import hashlib
+    i = 0; burst["t"] = []; burst["h"] = []
     while burst["on"]:
-        p = os.path.abspath(f"{OUT}/burst-{i:03d}.ppm")
-        q2.cmd("screendump", filename=p); i += 1
+        p = os.path.abspath(f"{OUT}/burst-{burst['tag']}-{i:03d}.ppm")
+        q2.cmd("screendump", filename=p); burst["t"].append(time.monotonic())
+        with open(p, "rb") as f: burst["h"].append(hashlib.md5(f.read()).hexdigest())
+        i += 1
     burst["n"] = i
+
+
+def fast_move(tag):
+    """FAST move of the focused window over the others: 3 figure-eights in 4.5 s, 60 pointer updates/s.
+    Judder = how long the picture stays frozen while the pointer keeps moving."""
+    key("alt", "f7"); time.sleep(0.4)
+    burst["tag"] = tag; burst["on"] = True; th = threading.Thread(target=burster); th.start()
+    t = time.monotonic(); steps = 0
+    cx, cy = W // 2, H // 2
+    while time.monotonic() - t < 4.5:
+        a = 2 * math.pi * (time.monotonic() - t) / 1.5
+        ev(*absxy(cx + 520 * math.sin(a), cy + 260 * math.sin(2 * a))); steps += 1
+        time.sleep(1 / 60)
+    burst["on"] = False; th.join()
+    key("ret"); time.sleep(1)
+    ts, hs = burst["t"], burst["h"]
+    same = sum(1 for a, b in zip(hs, hs[1:]) if a == b)
+    longest = run = 0.0
+    for k in range(1, len(hs)):
+        run = run + (ts[k] - ts[k - 1]) if hs[k] == hs[k - 1] else 0.0
+        longest = max(longest, run)
+    changes = len(hs) - 1 - same
+    log(f"MOVE {tag}: {steps} pointer updates in 4.5 s; {len(hs)} snapshots, {changes} picture changes "
+        f"({changes / 4.5:.0f}/s), {same} frozen, longest freeze {longest * 1000:.0f} ms")
+
+
+VARIANTS = sys.argv[5:] if len(sys.argv) > 5 else ["default"]
+CMDS = {   # typed into the focused terminal before the move
+    "default": None,
+    "xpresent": None,
+    "vbloff": "xfconf-query -c xfwm4 -p /general/vblank_mode -s off\n",
+    "nocomp": "xfconf-query -c xfwm4 -p /general/use_compositing -s false\n",
+    "picomxr": "picom -b --config /dev/null --backend xrender\n",
+}
 
 
 log(f"waiting {BOOT:.0f} s for the desktop")
@@ -113,18 +150,10 @@ open_latency("settings", "meta_l", "i"); time.sleep(1.5)
 open_latency("terminal", "meta_l", "ret"); time.sleep(2)
 q2.cmd("screendump", filename=os.path.abspath(f"{OUT}/01-three-windows.ppm"))
 
-# FAST move of the focused window (the terminal) over Files + Settings: 3 figure-eights in 4.5 s, 60 updates/s
-key("alt", "f7"); time.sleep(0.4)
-burst["on"] = True; th = threading.Thread(target=burster); th.start()
-t = time.monotonic(); steps = 0
-cx, cy = W // 2, H // 2
-while time.monotonic() - t < 4.5:
-    a = 2 * math.pi * (time.monotonic() - t) / 1.5
-    ev(*absxy(cx + 520 * math.sin(a), cy + 260 * math.sin(2 * a))); steps += 1
-    time.sleep(1 / 60)
-burst["on"] = False; th.join()
-key("ret"); time.sleep(1)
-log(f"MOVE: {steps} pointer updates in 4.5 s; {burst['n']} framebuffer snapshots during the move")
+for v in VARIANTS:
+    if CMDS.get(v):
+        type_text(CMDS[v]); time.sleep(2.5)
+    fast_move(v)
 q2.cmd("screendump", filename=os.path.abspath(f"{OUT}/02-after-move.ppm"))
 type_text("free -m\n"); time.sleep(1.5)
 q2.cmd("screendump", filename=os.path.abspath(f"{OUT}/03-free.ppm"))

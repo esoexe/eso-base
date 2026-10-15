@@ -34,8 +34,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
           xorriso -osirrox on -indev new.iso -extract /boot/vmlinuz vmlinuz -extract /boot/initrd.img initrd.img 2>/dev/null
-          run() {   # run NAME DISPLAYNO boot-args...
-            n=$1 d=$2; shift 2; mkdir -p out/$n
+          run() {   # run NAME DISPLAYNO "VARIANTS" boot-args...
+            n=$1 d=$2 vs=$3; shift 3; mkdir -p out/$n
             Xvfb :$d -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 & xv=$!
             for i in $(seq 50); do [ -S /tmp/.X11-unix/X$d ] && break; sleep 0.1; done
             qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080 \
@@ -46,20 +46,20 @@ jobs:
             DISPLAY=:$d xtigervncviewer -FullScreen -RemoteResize=0 -Shared -MenuKey= 127.0.0.1:$((d - 90)) > out/$n/vnc.log 2>&1 &
             ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1920x1080 -draw_mouse 0 -i :$d.0 \
               -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p out/$n/raw.mp4 </dev/null & ff=$!
-            python3 bootstrap/ci/compare-drive.py out/$n/q1.sock out/$n/q2.sock out/$n ${{ github.event.inputs.boot_wait }} | tee out/$n/drive.log
+            python3 bootstrap/ci/compare-drive.py out/$n/q1.sock out/$n/q2.sock out/$n ${{ github.event.inputs.boot_wait }} $vs | tee out/$n/drive.log
             sleep 1; kill -INT $ff; wait $ff || true
             kill $q; sleep 1; kill $xv || true
             ffmpeg -loglevel error -y -i out/$n/raw.mp4 -c:v libx264 -preset slow -crf 22 -pix_fmt yuv420p -movflags +faststart out/$n/$n.mp4 && rm out/$n/raw.mp4
             # snapshots: keep the fixed ones + every 2nd burst frame (max 40) as PNG
-            i=0; for f in out/$n/burst-*.ppm; do
+            for v in $vs; do i=0; for f in out/$n/burst-$v-*.ppm; do
               [ -e "$f" ] || continue
-              if [ $((i % 2)) -eq 0 ] && [ $i -lt 80 ]; then ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png"; fi
+              if [ $((i % 6)) -eq 0 ] && [ $i -lt 240 ]; then ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png"; fi
               rm "$f"; i=$((i + 1))
-            done
+            done; done
             for f in out/$n/0*.ppm; do ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png" && rm "$f"; done
           }
-          run v374 91 -cdrom old.iso -boot d
-          run v-new 92 -cdrom new.iso -kernel vmlinuz -initrd initrd.img \
+          run v374 91 "default" -cdrom old.iso -boot d
+          run v-new 92 "xpresent vbloff nocomp picomxr" -cdrom new.iso -kernel vmlinuz -initrd initrd.img \
               -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3"
           grep -h "OPEN\|MOVE" out/*/drive.log
       - uses: actions/upload-artifact@v4
