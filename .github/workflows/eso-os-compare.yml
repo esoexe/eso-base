@@ -59,7 +59,7 @@ jobs:
             for f in out/$n/0*.ppm; do ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png" && rm "$f"; done
           }
           run v374 91 "default" -cdrom old.iso -boot d
-          run v-new 92 "xpresent vbloff nocomp picomxr" -cdrom new.iso -kernel vmlinuz -initrd initrd.img \
+          run v-new 92 "xpresent" -cdrom new.iso -kernel vmlinuz -initrd initrd.img \
               -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3"
           grep -h "OPEN\|MOVE" out/*/drive.log
       - uses: actions/upload-artifact@v4

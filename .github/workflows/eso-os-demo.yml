@@ -46,13 +46,13 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 & xv=$!
           for i in $(seq 50); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
           export DISPLAY=:99 SDL_VIDEO_X11_XRANDR=0
-          ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1920x1080 -draw_mouse 0 -i :99.0 \
-            -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p demo-raw.mp4 </dev/null & ff=$!
           qemu-system-x86_64 $ACC -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080 \
             -device qemu-xhci -device usb-tablet \
             -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
-            -display none -vnc 127.0.0.1:3 -serial file:boot.log -qmp unix:qmp.sock,server,nowait -no-reboot & q=$!
+            -display none -vnc 127.0.0.1:3 -serial file:boot.log -qmp unix:qmp.sock,server,nowait -qmp unix:rec.sock,server,nowait -no-reboot & q=$!
+          # filmed straight from the VM's framebuffer (whole frames, 60 fps): what ESO OS really draws
+          python3 bootstrap/ci/qmp-record.py rec.sock demo-raw.mp4 60 & ff=$!
           sleep 1
           xtigervncviewer -FullScreen -RemoteResize=0 -Shared -MenuKey= 127.0.0.1:3 >vncviewer.log 2>&1 &
           DEMO_PHASE="${{ github.event.inputs.phase }}" python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee drive.log
