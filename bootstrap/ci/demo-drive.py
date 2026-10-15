@@ -244,6 +244,17 @@ if os.environ.get("DEMO_PHASE") == "bootdiag":
     wait(5)
     shot("82-probe-after-start")
     sys.exit(0)
+if os.environ.get("DEMO_PHASE") == "watchdiag":
+    # the shell watcher: kill the shell on purpose; the taskbar + desktop icons must come back within ~3 s
+    log("watcher diagnostics; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    key("meta_l", "down"); wait(1)
+    key("meta_l", "ret"); wait(3)
+    type_text("clear; pgrep -af eso-shellwatc[h]; pgrep -a -x eso-shell; pkill -x eso-shell; sleep 0.7; echo killed\n")
+    wait(1.2); shot("60-shell-killed")
+    wait(5); type_text("pgrep -a -x eso-shell; grep shellwatch $XDG_RUNTIME_DIR/eso/autostart.log\n")
+    wait(2); shot("61-shell-back")
+    sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "closediag":
     # the taskbar + desktop icons vanished together with the browser on Alt+F4: reproduce and collect the logs
     log("close diagnostics; waiting for the desktop")
