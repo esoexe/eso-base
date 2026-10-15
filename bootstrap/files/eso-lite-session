@@ -56,7 +56,10 @@ if [ "${ESO_LOCK_AT_START:-0}" != 1 ] && command -v eso-intro >/dev/null 2>&1; t
     # the still frame stays until the intro is on screen (a slow first boot can take a few seconds)
     i=0; while [ $i -lt 160 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 $! 2>/dev/null; do sleep 0.05; i=$((i + 1)); done
 fi
-wallpaper
+# With the intro, the X root keeps its still frame (the intro's own picture) until the desktop takes over: when
+# xfwm4's compositor starts, its first frame shows the root, so a wallpaper there flashed through the intro
+# (eso-shell puts the desktop's picture on the root itself once it is drawn).
+[ "$INTRO" = 1 ] || wallpaper
 WM=${ESO_WM:-$(head -n 1 "$HOME/.config/eso/wm" 2>/dev/null)}
 if [ "$WM" = i3 ] || ! command -v xfwm4 >/dev/null 2>&1; then
     export XDG_CURRENT_DESKTOP=ESO:i3 ESO_WM=i3
