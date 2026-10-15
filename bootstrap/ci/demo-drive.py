@@ -246,6 +246,21 @@ if os.environ.get("DEMO_PHASE") == "bootdiag":
     wait(5)
     shot("82-probe-after-start")
     sys.exit(0)
+if os.environ.get("DEMO_PHASE") == "closediag":
+    # the taskbar + desktop icons vanished together with the browser on Alt+F4: reproduce and collect the logs
+    log("close diagnostics; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    key("meta_l", "down"); wait(1)                       # minimize ESO Setup
+    shot("70-desktop")
+    key("meta_l", "b"); wait(8); shot("71-browser")
+    key("alt", "f4"); wait(2.5); shot("72-after-close-browser")
+    key("meta_l", "b"); wait(8)
+    key("meta_l", "n"); wait(1.8); key("esc"); wait(0.8); shot("73-browser-after-notif")
+    key("alt", "f4"); wait(2.5); shot("74-after-close-browser-2")
+    key("meta_l", "ret"); wait(3)
+    type_text("clear; tail -n 22 $XDG_RUNTIME_DIR/eso/autostart.log | cut -c1-150; pgrep -a python3 | cut -c1-110\n")
+    wait(3); shot("75-logs")
+    sys.exit(0)
 log("connected; waiting for the desktop")
 cx, cy = W // 2, H // 2
 # the desktop (with ESO Setup on a live boot) is up ~12 s after power-on with KVM; give it margin
@@ -257,7 +272,8 @@ SETUP_T, FILES_T, SETTINGS_T, TERM_T = (900, 231), (900, 172), (850, 164), (800,
 
 # 1. the setup window: drag it around smoothly (3.13.6: no trails), put it back, minimize it
 drag_window(SETUP_T, [(SETUP_T[0] + dx, SETUP_T[1] + dy) for (dx, dy) in
-                      [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -120), (0, 0)]], 4.5, "setup")
+                      [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -110)]], 4.0, "setup")
+# (the path must not end where it began: the before/after comparison would then see "no change")
 shot("02-dragged-setup")
 key("meta_l", "down"); wait(1.2)
 
