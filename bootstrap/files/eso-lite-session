@@ -1,7 +1,8 @@
 #!/bin/sh
 # ESO Desktop — the default X11 session (Windows-style windows). Installed to /usr/local/bin.
 #   Window manager: xfwm4 — title bars with minimize / maximize / close, double-click = maximize, resize from any
-#   edge, drag to a screen edge = snap, overlapping windows, "Always on top".  picom draws shadows/rounding/animations.
+#   edge, drag to a screen edge = snap, overlapping windows, "Always on top".  Compositing: picom (GPU, effects) or
+#   xfwm4's own compositor (VMs, no GPU), picked by eso-perf.
 #   Keys: sxhkd (apps, familiar layout) + xfwm4 (window keys); a lone tap of the Windows key opens Start (xcape).
 #   ESO_WM=i3 (env, or "i3" in ~/.config/eso/wm) starts the old i3 tiling layout instead.
 export XDG_CURRENT_DESKTOP=ESO XDG_SESSION_DESKTOP=eso ESO_SESSION=lite
@@ -58,12 +59,16 @@ command -v sxhkd >/dev/null 2>&1 && SXHKD_SHELL="$(command -v eso-sxhkd-sh || ec
 if command -v eso-supertap >/dev/null 2>&1; then eso-supertap >/dev/null 2>&1 &      # ESO Base: built-in lone-Super-tap = Start
 elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|Escape;Super_R=Control_L|Escape' >/dev/null 2>&1; fi
 ( sleep 0.3; "$HOME/.local/bin/eso-theme-apply" >/dev/null 2>&1; exec "$HOME/.local/bin/eso-autostart" ) &
+# xfwm4's built-in compositor: eso-perf writes its settings (on with the right vsync, or off when picom draws the
+# effects) BEFORE xfwm4 starts. --compositor=on only makes xfwm4 able to composite; use_compositing decides, and
+# eso-perf / game mode switch it live. A compositor means dragged windows never leave trails or tear.
+command -v eso-perf >/dev/null 2>&1 && eso-perf wm-prepare >/dev/null 2>&1
 # The session lives as long as the window manager.  If xfwm4 ever crashes it comes straight back
 # (windows keep running); eso-logout writes $RUN/logout first, so a real "Sign out" ends the loop.
 fails=0
 while :; do
     t0=$(date +%s)
-    xfwm4 --replace --compositor=off --sm-client-disable >/dev/null 2>&1
+    xfwm4 --replace --compositor=on --sm-client-disable >/dev/null 2>&1
     [ -e "$RUN/logout" ] && break
     if [ $(( $(date +%s) - t0 )) -lt 5 ]; then fails=$((fails + 1)); else fails=0; fi
     if [ "$fails" -ge 5 ]; then exec i3 -c "$HOME/.config/i3/config"; fi   # broken xfwm4 → still a desktop

@@ -114,6 +114,27 @@ tar -xJf /sources/JetBrainsMono.tar.xz -C /usr/share/fonts/jetbrains-mono-nerd -
     JetBrainsMonoNerdFont-BoldItalic.ttf
 fc-cache -f >/dev/null
 
+# ───────────────────────────── compositor: picom ─────────────────────────────
+# ESO on Debian drew its windows through picom (vsync, no repaint trails, Ultra fades/zoom). ESO Base builds the same
+# picom (12.5, Debian 13's version, which ESO's picom configs are tuned for). eso-perf runs it on PCs with a real GPU;
+# VMs and PCs without one use xfwm4's built-in compositor instead (cheaper there, measured).
+step "picom $V_picom + libev $V_libev + libconfig $V_libconfig + uthash $V_uthash (headers)"
+had_event_h=0; [[ -e /usr/include/event.h ]] && had_event_h=1
+unpack libev "libev-$V_libev.tar.gz"
+quiet ./configure --prefix=/usr --disable-static; quiet make -j"$(nproc)"; quiet make install
+[[ $had_event_h = 1 ]] || rm -f /usr/include/event.h          # libev's libevent-compat header: never shadow libevent
+done_ libev
+unpack libconfig "libconfig-$V_libconfig.tar.gz"
+quiet ./configure --prefix=/usr --disable-static --disable-examples --disable-tests --disable-cxx
+quiet make -j"$(nproc)"; quiet make install; done_ libconfig
+unpack uthash "uthash-v$V_uthash.tar.gz"; install -m644 src/*.h /usr/include/; done_ uthash
+unpack picom "picom-v$V_picom.tar.gz"
+quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload -Dwith_docs=false -Dunittest=false \
+    -Dregex=true -Dopengl=true -Ddbus=true -Dvsync_drm=false -Dcompton=false
+quiet ninja -C build; quiet ninja -C build install
+rm -f /etc/xdg/autostart/picom.desktop                         # eso-perf starts it, only where it belongs
+ldconfig; picom --version; done_ picom
+
 # ───────────────────────────── the ESO desktop ─────────────────────────────
 step "ESO desktop $V_esodesktop (eso-desktop package, installed by ESO's own installer: no dpkg)"
 python3 -c "import lzma, tarfile, hashlib, ssl" || { echo "FAILED: python3 lacks lzma/ssl (needed by ESO updates)"; exit 1; }
@@ -313,6 +334,32 @@ sys.exit(0 if diff <= 2 else 1)
 PYEOF
         rm -f /tmp/rp.ppm
     fi
+    # compositors: xfwm4's own (VMs, no GPU) and picom (GPU PCs) must both take over the screen on ESO Base
+    cat > /tmp/comp.py <<'PYEOF'
+import gi, sys
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk
+sys.exit(0 if Gdk.Screen.get_default().is_composited() else 1)
+PYEOF
+    rc=0; asuser eso dbus-run-session -- sh -c '
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true
+        xfconf-query -c xfwm4 -p /general/vblank_mode -n -t string -s xpresent
+        xfwm4 --compositor=on --sm-client-disable > /tmp/xfwm4c.log 2>&1 & W=$!
+        for i in 1 2 3 4 5 6 7 8 9 10; do sleep 0.5; python3 /tmp/comp.py && break; done
+        python3 /tmp/comp.py; r=$?
+        xfconf-query -c xfwm4 -p /general/use_compositing -s false; sleep 1
+        python3 /tmp/comp.py && r=2
+        picom --config /dev/null --backend xrender > /tmp/picom.log 2>&1 & P=$!
+        for i in 1 2 3 4 5 6; do sleep 0.5; python3 /tmp/comp.py && break; done
+        python3 /tmp/comp.py || r=3
+        kill $P $W; exit $r' || rc=$?
+    case $rc in
+        0) echo "  compositors: xfwm4 (XPresent) composites, switches off live, picom takes over" ;;
+        1) echo "  FAILED: xfwm4 compositor did not start"; cat /tmp/xfwm4c.log | tail -15; bad=1 ;;
+        2) echo "  FAILED: xfwm4 compositor did not switch off"; bad=1 ;;
+        *) echo "  FAILED: picom did not composite (rc $rc)"; tail -15 /tmp/picom.log; bad=1 ;;
+    esac
+    rm -f /tmp/comp.py
     for app in eso-settings eso-browser; do
         rc=0; asuser eso dbus-run-session -- timeout 25 "/usr/local/bin/$app" > /tmp/app.log 2>&1 || rc=$?
         if [[ $rc -eq 124 ]] && ! grep -q "Traceback" /tmp/app.log; then echo "  $app: running after 25 s, no errors"

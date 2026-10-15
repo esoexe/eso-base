@@ -23,6 +23,13 @@ printf '%s\n' "${rows[@]}" | sort -rn | head -15 | awk '{printf "ESO-SELFTEST   
 for x in Xorg xfwm4 eso-shell eso-lite-session; do
     pgrep -f "$x" >/dev/null && echo "ESO-SELFTEST running: $x" || echo "ESO-SELFTEST NOT running: $x"
 done
+# 3.13.6: a compositor always draws the desktop (picom on GPU PCs, xfwm4's own in VMs): no trails behind dragged windows
+comp=$(DISPLAY=:0 XAUTHORITY=/home/eso/.Xauthority asuser_plain eso python3 -c 'import gi
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk
+s = Gdk.Screen.get_default()
+print("composited" if s and s.is_composited() else "NOT composited")' 2>/dev/null)
+echo "ESO-SELFTEST compositor: ${comp:-unknown} picom=$(pgrep -x picom >/dev/null && echo yes || echo no) xfwm4-use_compositing=$(DISPLAY=:0 asuser_plain eso sh -c 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus xfconf-query -c xfwm4 -p /general/use_compositing' 2>/dev/null) vblank=$(DISPLAY=:0 asuser_plain eso sh -c 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus xfconf-query -c xfwm4 -p /general/vblank_mode' 2>/dev/null)"
 echo "ESO-SELFTEST session: eso-session@eso=$(systemctl is-active eso-session@eso.service 2>/dev/null) greetd=$(systemctl is-active greetd.service 2>/dev/null) vt=$(cat /sys/class/tty/tty0/active 2>/dev/null)"
 # boot speed: firmware/loader (when known) + kernel + initramfs + system, and when the desktop (eso-shell) started
 # 3.13.2 responsiveness: Ultra hardware mode, preemption, firmware, app preloader
