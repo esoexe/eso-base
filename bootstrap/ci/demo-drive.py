@@ -199,10 +199,13 @@ q = QMP(SOCK)
 if os.environ.get("DEMO_PHASE") == "diag":
     # after the recording: who the terminal runs as and its Linux capabilities (zsh showed # for a normal user)
     log("diagnostics")
-    key("meta_l", "ret"); time.sleep(3)
-    type_text("clear; cat /etc/eso-release 2>/dev/null | head -3; pgrep -a -x eso-shell; pgrep -a -x eso-shellwatch; "
-              "grep -c 'X Window System error' $XDG_RUNTIME_DIR/eso/autostart.log; grep shellwatch $XDG_RUNTIME_DIR/eso/autostart.log | tail -3\n")
-    time.sleep(3)
+    key("meta_l", "ret"); time.sleep(3.5)
+    shot("89-matrix-fresh")                              # untouched new terminal: its first line must be the shell's
+    type_text("clear; cat $XDG_RUNTIME_DIR/eso/intro.log; grep -a 'eso-shell:' $XDG_RUNTIME_DIR/eso/autostart.log; "
+              "ps -o etimes=,comm= -C xfwm4,picom,eso-shell; cut -d' ' -f1 /proc/uptime; "
+              "xfconf-query -c xfwm4 -p /general/use_compositing; grep -ah 'compos\\|picom' $XDG_RUNTIME_DIR/eso/*.log | tail -4; "
+              "python3 -c 'import gi;from gi.repository import Gdk;print(\"composited now\",Gdk.Screen.get_default().is_composited())'\n")
+    time.sleep(4)
     shot("90-diag-terminal")
     sys.exit(0)
 PROBE = """python3 -c "import glob,select,struct,time
