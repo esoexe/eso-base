@@ -200,12 +200,10 @@ if os.environ.get("DEMO_PHASE") == "diag":
     # after the recording: who the terminal runs as and its Linux capabilities (zsh showed # for a normal user)
     log("diagnostics")
     key("meta_l", "ret"); time.sleep(3)
-    type_text("clear; cat /proc/uptime; ps -eo etimes,user,comm --sort=etimes | grep -v -E ' (kworker|ps|grep|zsh)' | head -28\n")
-    time.sleep(2.5)
+    type_text("clear; cat /etc/eso-release 2>/dev/null | head -3; pgrep -a -x eso-shell; pgrep -a -x eso-shellwatch; "
+              "grep -c 'X Window System error' $XDG_RUNTIME_DIR/eso/autostart.log; grep shellwatch $XDG_RUNTIME_DIR/eso/autostart.log | tail -3\n")
+    time.sleep(3)
     shot("90-diag-terminal")
-    type_text("clear; sudo -n journalctl -b --no-pager -o short-monotonic | grep -i -E 'session|xorg|xfwm|eso-shell|greet|segfault|killed|oom' | tail -30\n")
-    time.sleep(4)
-    shot("91-diag-journal")
     sys.exit(0)
 PROBE = """python3 -c "import glob,select,struct,time
 fs={open(p,'rb',buffering=0):p for p in glob.glob('/dev/input/event*')}
