@@ -13,6 +13,15 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$P
 # The wallpaper (a few ms with eso-rootpaint / xwallpaper / feh) is painted once the resolution is final and the
 # intro covers the screen (below): no black screen and no bare wallpaper between the boot animation and the desktop.
 wallpaper() { [ -x "$HOME/.local/bin/eso-wallpaper" ] && ESO_SESSION=lite "$HOME/.local/bin/eso-wallpaper" >/dev/null 2>&1; }
+# The intro's still frame (the boot animation's stars, planet and title without the comet), painted on the X root in
+# a few milliseconds: the screen is never black or a bare wallpaper while the intro (Python + GTK) starts.
+INTRO=0
+if [ "${ESO_LOCK_AT_START:-0}" != 1 ] && command -v eso-intro >/dev/null 2>&1 && command -v eso-rootpaint >/dev/null 2>&1 &&
+   ! grep -qs '^ESO_INTRO=["'"'"']*0' "$HOME/.config/eso/eso.conf"; then
+    for STILL in /usr/share/eso/src/assets/intro/intro-still-1080p.jpg "$HOME/.local/share/eso/src/assets/intro/intro-still-1080p.jpg"; do
+        [ -r "$STILL" ] && { eso-rootpaint --zoom "$STILL" >/dev/null 2>&1 && INTRO=1; break; }
+    done
+fi
 screen_size() { xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p' | head -n 1; }
 # The desktop starts by itself (eso-session@USER): an account with a password opens behind ESO Lock, which is the
 # sign-in screen. It starts before anything else draws.
@@ -35,14 +44,17 @@ export MOZ_USE_XINPUT2=1           # smooth scrolling + low-latency input in Fir
 xset r rate 220 40 2>/dev/null
 xset s off 2>/dev/null
 # 100 % scale + best resolution for the attached monitor BEFORE anything draws
+size0=$(screen_size)
 command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1
+[ "$INTRO" = 1 ] && [ "$(screen_size)" != "$size0" ] && eso-rootpaint --zoom "$STILL" >/dev/null 2>&1
 # The ESO intro goes on from the boot animation's exact picture (same stars, planet, comet position) and dissolves
 # into the desktop once it is ready, so boot -> desktop is one continuous film with nothing popping up. It must
 # cover the screen BEFORE the wallpaper is painted, otherwise the bare wallpaper flashes in between.
 RUN="${XDG_RUNTIME_DIR:-/tmp}/eso"; mkdir -p "$RUN"; rm -f "$RUN/shell-ready" "$RUN/intro-mapped"
 if [ "${ESO_LOCK_AT_START:-0}" != 1 ] && command -v eso-intro >/dev/null 2>&1; then
     eso-intro >"$RUN/intro.log" 2>&1 &
-    i=0; while [ $i -lt 30 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 $! 2>/dev/null; do sleep 0.05; i=$((i + 1)); done
+    # the still frame stays until the intro is on screen (a slow first boot can take a few seconds)
+    i=0; while [ $i -lt 160 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 $! 2>/dev/null; do sleep 0.05; i=$((i + 1)); done
 fi
 wallpaper
 WM=${ESO_WM:-$(head -n 1 "$HOME/.config/eso/wm" 2>/dev/null)}

@@ -21,7 +21,7 @@ f.readline()
 f.write(json.dumps({"execute": "qmp_capabilities"}) + "\n"); f.flush(); f.readline()
 
 ff = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-y", "-f", "image2pipe", "-use_wallclock_as_timestamps", "1",
-                       "-c:v", "ppm", "-i", "-", "-vf", f"fps={FPS}", "-c:v", "libx264", "-preset", "ultrafast",
+                       "-c:v", "ppm", "-i", "-", "-vf", f"scale=1920:1080:flags=bicubic,fps={FPS}", "-c:v", "libx264", "-preset", "ultrafast",
                        "-threads", "2", "-crf", "18", "-pix_fmt", "yuv420p", OUT], stdin=subprocess.PIPE)
 n = 0; t0 = time.monotonic()
 while run["on"]:
