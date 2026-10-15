@@ -152,8 +152,10 @@ def changed(a, b):
 def mice():
     """which QEMU mouse gets button events right now (the 'current' one)"""
     try:
+        r = q.cmd("query-mice")
+        r = r.get("return", r) if isinstance(r, dict) else r
         return ", ".join(f"{m['name']}{'*' if m.get('current') else ''}{'(abs)' if m.get('absolute') else ''}"
-                         for m in q.cmd("query-mice"))
+                         for m in r)
     except Exception as e:                               # noqa: BLE001
         return f"query-mice failed: {e}"
 
@@ -198,8 +200,12 @@ if os.environ.get("DEMO_PHASE") == "diag":
     # after the recording: who the terminal runs as and its Linux capabilities (zsh showed # for a normal user)
     log("diagnostics")
     key("meta_l", "ret"); time.sleep(3)
-    type_text("id; grep Cap /proc/$$/status; ps -o user,pid,ppid,comm -p $$,$PPID\n"); time.sleep(2)
+    type_text("clear; cat /proc/uptime; ps -eo etimes,user,comm --sort=etimes | grep -v -E ' (kworker|ps|grep|zsh)' | head -28\n")
+    time.sleep(2.5)
     shot("90-diag-terminal")
+    type_text("clear; sudo -n journalctl -b --no-pager -o short-monotonic | grep -i -E 'session|xorg|xfwm|eso-shell|greet|segfault|killed|oom' | tail -30\n")
+    time.sleep(4)
+    shot("91-diag-journal")
     sys.exit(0)
 PROBE = """python3 -c "import glob,select,struct,time
 fs={open(p,'rb',buffering=0):p for p in glob.glob('/dev/input/event*')}
@@ -293,7 +299,7 @@ key("esc"); wait(0.8)
 
 # 9. close the 4 windows this demo opened (browser, terminal, settings, files), back to the desktop
 for i in range(4):
-    key("alt", "f4"); wait(1.1)
+    key("alt", "f4"); wait(1.1); shot(f"15-close-{i + 1}")
 move(cx + 300, cy + 200, 1.0); wait(2.5)
 shot("14-end")
 log("demo done")
