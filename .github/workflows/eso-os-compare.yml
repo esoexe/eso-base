@@ -1,0 +1,71 @@
+name: "ESO OS - smoothness comparison: 3.7.4 (Debian) vs the newest build, same VM, same test"
+on:
+  workflow_dispatch:
+    inputs:
+      boot_wait:
+        description: "seconds from power-on before the test starts"
+        default: "75"
+permissions:
+  actions: read
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: ISOs (3.7.4 from the public download, newest from the ISO workflow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          curl -fsSL -A "Mozilla/5.0" -o old.iso https://dl.esoos.dpdns.org/3.7.4/eso-os-standard-3.7.4-amd64.iso
+          echo "f6eff5c3175a7748acec5f853d5bfaacc93e0f055ddea966fbfcebb8f853efb0  old.iso" | sha256sum -c
+          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-os-iso-x86_64&per_page=1" \
+               | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifacts"][0]["id"])')
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o i.zip "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
+          unzip -q i.zip && rm i.zip && mv eso-os-x86_64.iso new.iso
+      - name: Tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 ffmpeg xvfb tigervnc-viewer >/dev/null
+      - name: Same test on both, one after the other
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm || true
+          xorriso -osirrox on -indev new.iso -extract /boot/vmlinuz vmlinuz -extract /boot/initrd.img initrd.img 2>/dev/null
+          run() {   # run NAME DISPLAYNO boot-args...
+            n=$1 d=$2; shift 2; mkdir -p out/$n
+            Xvfb :$d -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 & xv=$!
+            for i in $(seq 50); do [ -S /tmp/.X11-unix/X$d ] && break; sleep 0.1; done
+            qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080 \
+              -device qemu-xhci -device usb-tablet "$@" \
+              -display none -vnc 127.0.0.1:$((d - 90)) -qmp unix:out/$n/q1.sock,server,nowait -qmp unix:out/$n/q2.sock,server,nowait \
+              -no-reboot > out/$n/qemu.log 2>&1 & q=$!
+            sleep 1
+            DISPLAY=:$d xtigervncviewer -FullScreen -RemoteResize=0 -Shared -MenuKey= 127.0.0.1:$((d - 90)) > out/$n/vnc.log 2>&1 &
+            ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1920x1080 -draw_mouse 0 -i :$d.0 \
+              -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p out/$n/raw.mp4 </dev/null & ff=$!
+            python3 bootstrap/ci/compare-drive.py out/$n/q1.sock out/$n/q2.sock out/$n ${{ github.event.inputs.boot_wait }} | tee out/$n/drive.log
+            sleep 1; kill -INT $ff; wait $ff || true
+            kill $q; sleep 1; kill $xv || true
+            ffmpeg -loglevel error -y -i out/$n/raw.mp4 -c:v libx264 -preset slow -crf 22 -pix_fmt yuv420p -movflags +faststart out/$n/$n.mp4 && rm out/$n/raw.mp4
+            # snapshots: keep the fixed ones + every 2nd burst frame (max 40) as PNG
+            i=0; for f in out/$n/burst-*.ppm; do
+              [ -e "$f" ] || continue
+              if [ $((i % 2)) -eq 0 ] && [ $i -lt 80 ]; then ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png"; fi
+              rm "$f"; i=$((i + 1))
+            done
+            for f in out/$n/0*.ppm; do ffmpeg -loglevel error -y -i "$f" "${f%.ppm}.png" && rm "$f"; done
+          }
+          run v374 91 -cdrom old.iso -boot d
+          run v-new 92 -cdrom new.iso -kernel vmlinuz -initrd initrd.img \
+              -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3"
+          grep -h "OPEN\|MOVE" out/*/drive.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-os-compare
+          path: |
+            out/*/*.mp4
+            out/*/*.png
+            out/*/drive.log
+          retention-days: 7
