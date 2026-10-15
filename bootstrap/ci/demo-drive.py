@@ -82,10 +82,14 @@ def key(*names, hold=0.06):
 
 
 def type_text(s, gap=0.07):
-    names = {" ": "spc", "\n": "ret", "-": "minus", ".": "dot", "/": "slash"}
+    names = {" ": "spc", "\n": "ret", "-": "minus", ".": "dot", "/": "slash", ";": "semicolon", ",": "comma",
+             "=": "equal"}
+    shifted = {"$": "4", "_": "minus", ":": "semicolon", "|": "backslash", ">": "dot"}
     for ch in s:
         if ch.isupper():
             key("shift", ch.lower())
+        elif ch in shifted:
+            key("shift", shifted[ch])
         else:
             key(names.get(ch, ch))
         time.sleep(gap)
@@ -102,6 +106,68 @@ def alt_drag(path, secs):
     ev({"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "alt"}}})
 
 
+def title_drag(grab, path, secs):
+    """drag a window by its title bar (grab = a point on the title bar)"""
+    move(*grab, 0.5); time.sleep(0.1)
+    btn(True); time.sleep(0.12)
+    step = secs / max(1, len(path))
+    for (x, y) in path:
+        move(x, y, step)
+    time.sleep(0.08); btn(False); time.sleep(0.1)
+
+
+def key_drag(path, secs):
+    """xfwm4's keyboard move (Alt+F7): the focused window follows the pointer, no mouse button needed; Return ends it"""
+    key("alt", "f7"); time.sleep(0.3)
+    step = secs / max(1, len(path))
+    for (x, y) in path:
+        move(x, y, step)
+    time.sleep(0.1); key("ret"); time.sleep(0.2)
+
+
+def ppm(name):
+    q.cmd("screendump", filename=os.path.abspath(f"{SHOTS}/.{name}.ppm"))
+    b = open(f"{SHOTS}/.{name}.ppm", "rb").read()
+    os.remove(f"{SHOTS}/.{name}.ppm")
+    i = 0
+    for _ in range(4):                                   # P6 / width height / maxval: skip the 3 header lines
+        i = b.index(b"\n", i) + 1 if _ < 3 else i
+    return b[i:]
+
+
+def changed(a, b):
+    """fraction of sampled pixels that differ (grid sample over the whole screen)"""
+    n = d = 0
+    for y in range(40, H - 60, 24):
+        for x in range(0, W, 24):
+            o = (y * W + x) * 3
+            n += 1
+            if abs(a[o] - b[o]) + abs(a[o + 1] - b[o + 1]) + abs(a[o + 2] - b[o + 2]) > 30:
+                d += 1
+    return d / max(1, n)
+
+
+def drag_window(grab, path, secs, name):
+    """move the window smoothly; verify it really moved, else try Alt+drag, then the keyboard move"""
+    before = ppm(name + "-a")
+    end = path[-1]
+    title_drag(grab, path, secs)
+    c = changed(before, ppm(name + "-b"))
+    if c > 0.02:
+        log(f"drag {name}: title bar ok ({c:.0%} of the screen changed)"); return
+    log(f"drag {name}: title bar did nothing ({c:.1%}), trying Alt+drag")
+    move(grab[0], grab[1] + 120, 0.3)
+    alt_drag([(x, y + 120) for (x, y) in path], secs)
+    c = changed(before, ppm(name + "-c"))
+    if c > 0.02:
+        log(f"drag {name}: Alt+drag ok ({c:.0%})"); return
+    log(f"drag {name}: Alt+drag did nothing ({c:.1%}), keyboard move")
+    move(*grab, 0.2)
+    key_drag(path, secs)
+    c = changed(before, ppm(name + "-d"))
+    log(f"drag {name}: keyboard move {'ok' if c > 0.02 else 'did NOTHING'} ({c:.0%})")
+
+
 def figure8(cx, cy, rx, ry, pts=24):
     return [(cx + rx * math.sin(2 * math.pi * i / pts), cy + ry * math.sin(4 * math.pi * i / pts)) for i in range(pts + 1)]
 
@@ -116,15 +182,25 @@ def wait(s):
 
 
 q = QMP(SOCK)
+if os.environ.get("DEMO_PHASE") == "diag":
+    # after the recording: who the terminal runs as and its Linux capabilities (zsh showed # for a normal user)
+    log("diagnostics")
+    key("meta_l", "ret"); time.sleep(3)
+    type_text("id; grep Cap /proc/$$/status; ps -o user,pid,ppid,comm -p $$,$PPID\n"); time.sleep(2)
+    shot("90-diag-terminal")
+    sys.exit(0)
 log("connected; waiting for the desktop")
 cx, cy = W // 2, H // 2
 # the desktop (with ESO Setup on a live boot) is up ~12 s after power-on with KVM; give it margin
 wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
 shot("01-desktop")
 
-# 1. the setup window: glide to it, drag it around smoothly (3.13.6: no trails), then minimize it
-move(cx, cy - 60, 0.8); wait(0.4)
-alt_drag(figure8(cx, cy - 60, 420, 160), 4.0); wait(0.6)
+# window title bars, measured on the 1920x1080 desktop of ESO OS 3.13.6 (windows open centred)
+SETUP_T, FILES_T, SETTINGS_T, TERM_T = (900, 231), (900, 172), (850, 164), (800, 234)
+
+# 1. the setup window: drag it around smoothly (3.13.6: no trails), put it back, minimize it
+drag_window(SETUP_T, [(SETUP_T[0] + dx, SETUP_T[1] + dy) for (dx, dy) in
+                      [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -120), (0, 0)]], 4.5, "setup")
 shot("02-dragged-setup")
 key("meta_l", "down"); wait(1.2)
 
@@ -133,22 +209,22 @@ key("ctrl", "esc"); wait(1.6); shot("03-start")
 type_text("settings"); wait(1.5); shot("04-search")
 key("esc"); wait(0.8)
 
-# 3. Files, dragged
+# 3. Files, dragged to the left
 key("meta_l", "e"); wait(3.0); shot("05-files")
-move(cx, cy, 0.6)
-alt_drag(figure8(cx, cy, 380, 180), 4.0); wait(0.5)
+drag_window(FILES_T, [(FILES_T[0] - 150, FILES_T[1] + 120), (FILES_T[0] - 380, FILES_T[1] + 60)], 2.2, "files")
 
-# 4. Settings over Files, dragged across it (the window underneath must stay clean)
+# 4. Settings, dragged across Files (Files underneath must stay clean)
 key("meta_l", "i"); wait(3.5); shot("06-settings")
-move(cx + 40, cy, 0.5)
-alt_drag([(cx - 300, cy - 120), (cx + 320, cy + 80), (cx - 200, cy + 120), (cx + 40, cy)], 4.0); wait(0.6)
+drag_window(SETTINGS_T, [(SETTINGS_T[0] - 350, SETTINGS_T[1] + 180), (SETTINGS_T[0] + 50, SETTINGS_T[1] + 260),
+                         (SETTINGS_T[0] + 380, SETTINGS_T[1] + 90)], 3.5, "settings")
 shot("07-overlap")
 key("meta_l", "up"); wait(1.6); shot("08-maximized")
 key("meta_l", "up"); wait(1.4)
 
-# 5. Terminal: system info
+# 5. Terminal: system report with the ESO logo
 key("meta_l", "ret"); wait(2.5)
 type_text("fastfetch\n"); wait(3.5); shot("09-terminal")
+drag_window(TERM_T, [(TERM_T[0] + 120, TERM_T[1] + 200), (TERM_T[0] + 60, TERM_T[1] + 300)], 2.0, "terminal")
 
 # 6. Task view
 key("meta_l", "tab"); wait(2.2); shot("10-taskview")
@@ -156,8 +232,7 @@ key("esc"); wait(1.0)
 
 # 7. Browser
 key("meta_l", "b"); wait(7.0); shot("11-browser")
-move(cx, cy + 40, 0.5)
-alt_drag(figure8(cx, cy + 40, 260, 120, 16), 3.0); wait(0.6)
+key("meta_l", "up"); wait(1.5); key("meta_l", "up"); wait(1.0)
 
 # 8. Quick settings and notifications
 key("meta_l", "a"); wait(1.8); shot("12-quick")
@@ -165,9 +240,9 @@ key("esc"); wait(0.8)
 key("meta_l", "n"); wait(1.8); shot("13-notifications")
 key("esc"); wait(0.8)
 
-# 9. close everything with Alt+F4, back to a clean desktop
-for i in range(5):
-    key("alt", "f4"); wait(1.0)
+# 9. close the 4 windows this demo opened (browser, terminal, settings, files), back to the desktop
+for i in range(4):
+    key("alt", "f4"); wait(1.1)
 move(cx + 300, cy + 200, 1.0); wait(2.5)
 shot("14-end")
 log("demo done")
