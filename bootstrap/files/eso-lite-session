@@ -45,7 +45,7 @@ xset r rate 220 40 2>/dev/null
 xset s off 2>/dev/null
 # 100 % scale + best resolution for the attached monitor BEFORE anything draws
 size0=$(screen_size)
-command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1
+command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1 && export ESO_DISPLAY_DONE=1   # autostart: no 2nd run
 [ "$INTRO" = 1 ] && [ "$(screen_size)" != "$size0" ] && eso-rootpaint --zoom "$STILL" >/dev/null 2>&1
 # The ESO intro goes on from the boot animation's exact picture (same stars, planet, comet position) and dissolves
 # into the desktop once it is ready, so boot -> desktop is one continuous film with nothing popping up. It must
@@ -74,7 +74,9 @@ command -v dbus-update-activation-environment >/dev/null 2>&1 &&
 command -v sxhkd >/dev/null 2>&1 && SXHKD_SHELL="$(command -v eso-sxhkd-sh || echo /bin/sh)" sxhkd -c "$HOME/.config/sxhkd/sxhkdrc" >/dev/null 2>&1 &
 if command -v eso-supertap >/dev/null 2>&1; then eso-supertap >/dev/null 2>&1 &      # ESO Base: built-in lone-Super-tap = Start
 elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|Escape;Super_R=Control_L|Escape' >/dev/null 2>&1; fi
-( sleep 0.3; "$HOME/.local/bin/eso-theme-apply" >/dev/null 2>&1; exec "$HOME/.local/bin/eso-autostart" ) &
+# 3.13.14: autostart (and with it the desktop) right away; eso-autostart applies the gsettings theme itself in the
+# background (GTK on X11 reads settings.ini/XSETTINGS, not gsettings): it cost the first boot seconds before the shell
+( sleep 0.3; exec "$HOME/.local/bin/eso-autostart" ) &
 # xfwm4's built-in compositor: eso-perf writes its settings (on with the right vsync, or off when picom draws the
 # effects) BEFORE xfwm4 starts. --compositor=on only makes xfwm4 able to composite; use_compositing decides, and
 # eso-perf / game mode switch it live. A compositor means dragged windows never leave trails or tear.
