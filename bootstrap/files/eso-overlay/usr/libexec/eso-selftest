@@ -128,6 +128,12 @@ echo "ESO-SELFTEST mesa-vulkan: $(ls /usr/share/vulkan/icd.d 2>/dev/null | tr '\
 [[ -x /usr/local/libexec/eso-gl-probe ]] && echo "ESO-SELFTEST gl-probe: surfaceless=[$(/usr/local/libexec/eso-gl-probe --surfaceless 2>/dev/null)] gpu=[$(/usr/local/libexec/eso-gl-probe 2>/dev/null)]"
 echo "ESO-SELFTEST display-tune: $(cat /run/eso/display-tune 2>/dev/null || echo '-')"
 grep -hE "glamor|AccelMethod|ShadowFB|modeset\(0\): (Refusing|Using)|FBDEV\(0\): |\(EE\)" /var/log/Xorg.0.log /home/eso/.local/share/xorg/Xorg.0.log 2>/dev/null | head -n 10 | sed 's/^/ESO-SELFTEST xorg: /'
+# no desktop: the whole story (the newest X server log + the session's own log), so CI shows why
+if ! pgrep -f eso-lite-session >/dev/null; then
+    xl=$(ls -t /var/log/Xorg.*.log /home/eso/.local/share/xorg/Xorg.*.log 2>/dev/null | head -n1)
+    [[ -n $xl ]] && grep -vE "^\s*$|\(II\) (Loading|Module|LoadModule|UnloadModule)|ABI class|compiled for|Module class|^\s+\(" "$xl" | tail -n 40 | sed "s|^|ESO-SELFTEST xorg-tail ${xl##*/}: |"
+    tail -n 25 /run/user/1000/eso-lite-x.log 2>/dev/null | sed 's/^/ESO-SELFTEST session-x-log: /'
+fi
 # the desktop used like a person: 8 apps open together, Start, search, drag, Alt+Tab; freezes and "not responding"
 if [[ -S /tmp/.X11-unix/X0 && -x /usr/libexec/eso-uitest ]]; then
     asuser env ESO_HANGLOG=1 PYTHONPATH=/usr/lib/eso-hang timeout 240 python3 /usr/libexec/eso-uitest 2>&1 \

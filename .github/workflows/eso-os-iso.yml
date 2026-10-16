@@ -29,6 +29,7 @@ jobs:
           rm -f s.zip $N.tar.zst*
           sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
           sudo install -Dm644 bootstrap/files/eso-overlay/etc/modprobe.d/eso-vmwgfx-qemu.conf /mnt/eso/etc/modprobe.d/eso-vmwgfx-qemu.conf
+          sudo install -m755 bootstrap/files/eso-overlay/usr/libexec/eso-selftest /mnt/eso/usr/libexec/eso-selftest
           df -h /
       - name: Host packing + test tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 qemu-system-gui ovmf socat ffmpeg xvfb >/dev/null
@@ -111,7 +112,7 @@ jobs:
           kill $q 2>/dev/null || true
           { grep -a "ESO-SELFTEST" selftest-vmware-port.log 2>/dev/null || grep -a "ESO-SELFTEST" vm-console.log; } | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' > selftest-vmware.txt || true
           grep -E "boot-time|desktop|app-launch|appd-launch|gl-probe|display-tune|xorg:|failed-unit|freeze|mesa" selftest-vmware.txt | head -60
-          grep -q "ESO-SELFTEST running: eso-lite-session" selftest-vmware.txt || { grep -aiE "vmwgfx|vesafb|efifb|fb0|drm" vm-console.log | head -20; grep -a "xorg" selftest-vmware.txt | head; echo "::error::VMware graphics: no ESO session"; exit 1; }
+          grep -q "ESO-SELFTEST running: eso-lite-session" selftest-vmware.txt || { grep -aiE "vmwgfx|vesafb|efifb|fb0|drm" vm-console.log | head -20; grep -aE "xorg|session-x-log" selftest-vmware.txt | head -n 80; echo "::error::VMware graphics: no ESO session"; exit 1; }
           if grep -q "appd-launch: .*FAIL" selftest-vmware.txt; then echo "::error::VMware graphics: apps did not open"; exit 1; fi
           grep -q "display-tune: .*shadowfb=1" selftest-vmware.txt || echo "::warning::VMware graphics: display tune kept glamor"
       - name: Boot test (BIOS DVD, UEFI DVD) through ESO's GRUB - must reach the login prompt
