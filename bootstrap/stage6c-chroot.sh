@@ -114,6 +114,17 @@ tar -xJf /sources/JetBrainsMono.tar.xz -C /usr/share/fonts/jetbrains-mono-nerd -
     JetBrainsMonoNerdFont-BoldItalic.ttf
 fc-cache -f >/dev/null
 
+# ───────────────────────────── display fallback: Xorg fbdev ─────────────────────────────
+# modesetting needs a kernel DRM driver. A GPU the kernel has no driver for (or one whose driver refuses the card)
+# still has the firmware framebuffer - UEFI GOP (efifb) or the VESA mode ESO's GRUB sets on BIOS PCs (vesafb) - and
+# Xorg's automatic configuration falls back to fbdev on /dev/fb0 there: a desktop on every graphics card instead of
+# a black screen. (xf86-video-vesa needs Xorg's int10/VBE module, which ESO's Xorg doesn't build - vesafb covers it.)
+step "xf86-video-fbdev $V_xf86videofbdev (desktop on any GPU without a kernel driver)"
+unpack fbdev "xf86-video-fbdev-$V_xf86videofbdev.tar.xz"
+quiet ./configure --prefix=/usr --disable-static
+quiet make -j"$(nproc)"; quiet make install; rm -f /usr/lib/xorg/modules/drivers/fbdev_drv.la
+ls /usr/lib/xorg/modules/drivers/; done_ fbdev
+
 # ───────────────────────────── compositor: picom ─────────────────────────────
 # ESO on Debian drew its windows through picom (vsync, no repaint trails, Ultra fades/zoom). ESO Base builds the same
 # picom (12.5, Debian 13's version, which ESO's picom configs are tuned for). eso-perf runs it on PCs with a real GPU;

@@ -9,3 +9,4 @@ libev 4.33 http://dist.schmorp.de/libev/libev-4.33.tar.gz
 libconfig 1.8.1 https://hyperrealm.github.io/libconfig/dist/libconfig-1.8.1.tar.gz
 uthash 2.3.0 https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz
 picom 12.5 https://github.com/yshui/picom/archive/refs/tags/v12.5.tar.gz
+xf86videofbdev 0.5.1 https://xorg.freedesktop.org/archive/individual/driver/xf86-video-fbdev-0.5.1.tar.xz

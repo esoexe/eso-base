@@ -127,7 +127,7 @@ echo "ESO-SELFTEST mesa-dri: $(ls /usr/lib/dri 2>/dev/null | sed 's/_dri.so//' |
 echo "ESO-SELFTEST mesa-vulkan: $(ls /usr/share/vulkan/icd.d 2>/dev/null | tr '\n' ' ')"
 [[ -x /usr/local/libexec/eso-gl-probe ]] && echo "ESO-SELFTEST gl-probe: surfaceless=[$(/usr/local/libexec/eso-gl-probe --surfaceless 2>/dev/null)] gpu=[$(/usr/local/libexec/eso-gl-probe 2>/dev/null)]"
 echo "ESO-SELFTEST display-tune: $(cat /run/eso/display-tune 2>/dev/null || echo '-')"
-grep -hE "glamor|AccelMethod|ShadowFB|modeset\(0\): (Refusing|Using)" /var/log/Xorg.0.log /home/eso/.local/share/xorg/Xorg.0.log 2>/dev/null | head -n 6 | sed 's/^/ESO-SELFTEST xorg: /'
+grep -hE "glamor|AccelMethod|ShadowFB|modeset\(0\): (Refusing|Using)|FBDEV\(0\): |\(EE\)" /var/log/Xorg.0.log /home/eso/.local/share/xorg/Xorg.0.log 2>/dev/null | head -n 10 | sed 's/^/ESO-SELFTEST xorg: /'
 # the desktop used like a person: 8 apps open together, Start, search, drag, Alt+Tab; freezes and "not responding"
 if [[ -S /tmp/.X11-unix/X0 && -x /usr/libexec/eso-uitest ]]; then
     asuser env ESO_HANGLOG=1 PYTHONPATH=/usr/lib/eso-hang timeout 240 python3 /usr/libexec/eso-uitest 2>&1 \
