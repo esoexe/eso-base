@@ -22,9 +22,7 @@ jobs:
           curl -fsSL -A "Mozilla/5.0" https://dl.esoos.dpdns.org/3.7.4/get.sh | bash      # 145 checked parts
           mv eso-os-standard-3.7.4-amd64.iso old.iso; rm -rf eso-os-standard-3.7.4-amd64.iso.parts
           echo "f6eff5c3175a7748acec5f853d5bfaacc93e0f055ddea966fbfcebb8f853efb0  old.iso" | sha256sum -c
-          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=eso-os-iso-x86_64&per_page=1" \
-               | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifacts"][0]["id"])')
+          id=$(GITHUB_REPOSITORY="${{ github.repository }}" python3 bootstrap/ci/newest-artifact.py eso-os-iso-x86_64)
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o i.zip "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
           unzip -q i.zip && rm i.zip && mv eso-os-x86_64.iso new.iso
       - name: Tools

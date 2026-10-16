@@ -108,7 +108,26 @@ if [[ -S /tmp/.X11-unix/X0 ]] && command -v wmctrl >/dev/null; then
         else echo "ESO-SELFTEST app-launch: $app NO window within 10 s"; fi
     done
     free -m | awk '/^Mem:/{print "ESO-SELFTEST mem-after-apps: used " $3 " MiB (available " $7 " MiB)"}'
+    # the SAME apps the way a click starts them: a warm fork of the preloader (eso-appd). 3.13.19 hung here on
+    # ESO Base (fork after Pango started its font thread) while the direct start above was fine.
+    lib=/usr/local/lib/eso; [ -d /home/eso/.local/lib/eso ] && lib=/home/eso/.local/lib/eso
+    for app in eso-settings eso-taskmgr eso-files eso-store; do
+        p=$(command -v "$app" || echo /usr/local/bin/$app)
+        before=$(wins "$app"); t0=$(date +%s%N)
+        pid=$(asuser python3 -c "import sys; sys.path.insert(0, '$lib'); import esoui; print(esoui.appd_spawn(['$p']) or 0)" 2>/dev/null | tail -n1)
+        id=""; for i in $(seq 1 200); do sleep 0.05; id=$(comm -13 <(echo "$before") <(wins "$app") | head -1); [[ -n $id ]] && break; done
+        t1=$(date +%s%N)
+        if [[ -n $id ]]; then echo "ESO-SELFTEST appd-launch: $app window after $(( (t1 - t0) / 1000000 )) ms (pid ${pid:-?})"
+            sleep 1; wmctrl -ic "$id" 2>/dev/null; sleep 1
+        else echo "ESO-SELFTEST appd-launch: $app NO window within 10 s (pid ${pid:-?}) FAIL"; fi
+    done
 fi
+# graphics: the full Mesa must be there (3.13.19 shipped softpipe only) and the display tune's choice is logged
+echo "ESO-SELFTEST mesa-dri: $(ls /usr/lib/dri 2>/dev/null | sed 's/_dri.so//' | tr '\n' ' ')"
+echo "ESO-SELFTEST mesa-vulkan: $(ls /usr/share/vulkan/icd.d 2>/dev/null | tr '\n' ' ')"
+[[ -x /usr/local/libexec/eso-gl-probe ]] && echo "ESO-SELFTEST gl-probe: surfaceless=[$(/usr/local/libexec/eso-gl-probe --surfaceless 2>/dev/null)] gpu=[$(/usr/local/libexec/eso-gl-probe 2>/dev/null)]"
+echo "ESO-SELFTEST display-tune: $(cat /run/eso/display-tune 2>/dev/null || echo '-')"
+grep -hE "glamor|AccelMethod|ShadowFB|modeset\(0\): (Refusing|Using)" /var/log/Xorg.0.log /home/eso/.local/share/xorg/Xorg.0.log 2>/dev/null | head -n 6 | sed 's/^/ESO-SELFTEST xorg: /'
 # the desktop used like a person: 8 apps open together, Start, search, drag, Alt+Tab; freezes and "not responding"
 if [[ -S /tmp/.X11-unix/X0 && -x /usr/libexec/eso-uitest ]]; then
     asuser env ESO_HANGLOG=1 PYTHONPATH=/usr/lib/eso-hang timeout 240 python3 /usr/libexec/eso-uitest 2>&1 \
@@ -121,6 +140,9 @@ else echo "ESO-SELFTEST shell-heal: none needed"; fi
 echo "ESO-SELFTEST system-state: $(systemctl is-system-running 2>/dev/null)"
 systemctl list-jobs --no-legend --plain 2>/dev/null | head -10 | sed 's/^/ESO-SELFTEST waiting-job: /'
 systemctl --failed --no-legend --plain 2>/dev/null | sed 's/^/ESO-SELFTEST failed-unit: /'
+for u in $(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}'); do       # why it failed
+    journalctl -b -u "$u" --no-pager -o cat -n 8 2>/dev/null | sed "s|^|ESO-SELFTEST failed-unit-log $u: |"
+done
 echo "ESO-SELFTEST end"
 }
 report > /run/eso-selftest.txt 2>&1

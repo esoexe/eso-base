@@ -20,9 +20,7 @@ jobs:
         run: |
           set -e
           N=eso-base-stage6c-x86_64
-          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
-               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          id=$(GITHUB_REPOSITORY="${{ github.repository }}" python3 bootstrap/ci/newest-artifact.py $N)
           [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
@@ -95,6 +93,26 @@ jobs:
           sys.exit(0 if var ** 0.5 > 12 else 1)
           PY
           grep -q "ESO-SELFTEST running: eso-lite-session" selftest.txt
+          # apps must open the way a click starts them (eso-appd), and the full Mesa must be in the image
+          if grep -q "appd-launch: .*FAIL" selftest.txt; then echo "::error::apps did not open from the preloader"; exit 1; fi
+          grep -q "mesa-dri: .*iris.*radeonsi" selftest.txt || { echo "::error::full Mesa missing (iris/radeonsi)"; exit 1; }
+      - name: Self-test on VMware graphics (vmwgfx, no 3D) - the GPU probe must choose the fast 2D path
+        run: |
+          ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
+          rm -f vm-console.log selftest-vmware-port.log
+          qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga none -device vmware-svga -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
+            -append "eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
+            -display none -serial file:vm-console.log -serial file:selftest-vmware-port.log -no-reboot & q=$!
+          for i in $(seq 1 420); do
+            if grep -qa "ESO-SELFTEST end" selftest-vmware-port.log vm-console.log 2>/dev/null; then sleep 3; break; fi
+            kill -0 $q 2>/dev/null || break; sleep 1
+          done
+          kill $q 2>/dev/null || true
+          { grep -a "ESO-SELFTEST" selftest-vmware-port.log 2>/dev/null || grep -a "ESO-SELFTEST" vm-console.log; } | sed 's/^.*ESO-SELFTEST/ESO-SELFTEST/' > selftest-vmware.txt || true
+          grep -E "boot-time|desktop|app-launch|appd-launch|gl-probe|display-tune|xorg:|failed-unit|freeze|mesa" selftest-vmware.txt | head -60
+          grep -q "ESO-SELFTEST running: eso-lite-session" selftest-vmware.txt || { echo "::error::VMware graphics: no ESO session"; exit 1; }
+          if grep -q "appd-launch: .*FAIL" selftest-vmware.txt; then echo "::error::VMware graphics: apps did not open"; exit 1; fi
+          grep -q "display-tune: .*shadowfb=1" selftest-vmware.txt || echo "::warning::VMware graphics: display tune kept glamor"
       - name: Boot test (BIOS DVD, UEFI DVD) through ESO's GRUB - must reach the login prompt
         run: |
           ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
@@ -121,6 +139,7 @@ jobs:
             eso-os-desktop.png
             frame-*.png
             selftest.txt
+            selftest-vmware.txt
             boot-*.log
             selftest-port.log
           retention-days: 30

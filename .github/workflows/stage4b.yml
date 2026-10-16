@@ -25,10 +25,8 @@ jobs:
         run: |
           set -e
           N=eso-base-stage4-x86_64
-          if [ "${{ inputs.resume }}" = "true" ]; then N=eso-base-stage4b-x86_64; fi
-          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
-               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          ANY=""; if [ "${{ inputs.resume }}" = "true" ]; then N=eso-base-stage4b-x86_64; ANY=--any; fi
+          id=$(GITHUB_REPOSITORY="${{ github.repository }}" python3 bootstrap/ci/newest-artifact.py $N $ANY)
           [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"

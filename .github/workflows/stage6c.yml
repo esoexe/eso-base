@@ -20,9 +20,7 @@ jobs:
         run: |
           set -e
           N=eso-base-stage6d-x86_64
-          id=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=$N&per_page=1" \
-               | python3 -c 'import json,sys; a=json.load(sys.stdin)["artifacts"]; print(a[0]["id"] if a else "")')
+          id=$(GITHUB_REPOSITORY="${{ github.repository }}" python3 bootstrap/ci/newest-artifact.py $N)
           [ -n "$id" ] || { echo "no $N artifact"; exit 1; }
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o s.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
@@ -31,6 +29,25 @@ jobs:
           sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
           rm -f s.zip $N.tar.zst*
           df -h /
+      - name: Full Mesa 25.2.3 (iris, radeonsi, r600, zink, llvmpipe + Vulkan anv/radv/lavapipe) and the GPU gate
+        run: |
+          set -e
+          # Built by stage 4b (run 37923039159). Stage 5 once restored a cancelled 4b run's half-built tree, so every
+          # later stage carried stage 4's minimal Mesa (no iris/radeonsi/llvmpipe: softpipe on most PCs, ~25x slower).
+          # Installing the same files here is a no-op once the chain is rebuilt from a good 4b tree.
+          curl -fsSL -o mesa.tar.zst https://github.com/${{ github.repository }}/releases/download/sources/mesa-25.2.3-full-x86_64.tar.zst
+          echo "fd9bd753bb903219563f99435991792fe696562d7534d0c191fd21409872e38e  mesa.tar.zst" | sha256sum -c
+          sudo tar --zstd -xpf mesa.tar.zst -C /mnt/eso --keep-directory-symlink && rm -f mesa.tar.zst
+          for f in dri/iris_dri.so dri/radeonsi_dri.so dri/r600_dri.so dri/crocus_dri.so dri/i915_dri.so dri/nouveau_dri.so \
+                   dri/vmwgfx_dri.so dri/virtio_gpu_dri.so dri/zink_dri.so dri/swrast_dri.so dri/kms_swrast_dri.so \
+                   libvulkan_intel.so libvulkan_radeon.so libvulkan_lvp.so; do
+            [ -e "/mnt/eso/usr/lib/$f" ] || { echo "::error::GPU gate: /usr/lib/$f missing"; exit 1; }
+          done
+          for f in /usr/lib/libgallium-25.2.3.so /usr/lib/libvulkan_intel.so /usr/lib/libvulkan_radeon.so /usr/lib/gbm/dri_gbm.so; do
+            if sudo chroot /mnt/eso /usr/bin/ldd "$f" | grep "not found"; then echo "::error::GPU gate: $f has missing libraries"; exit 1; fi
+          done
+          strings -n 8 /mnt/eso/usr/lib/libgallium-25.2.3.so | grep -q "llvmpipe" || { echo "::error::GPU gate: no llvmpipe"; exit 1; }
+          echo "GPU gate OK: $(ls /mnt/eso/usr/lib/dri | tr '\n' ' ')"
       - name: ESO Ultimate test package (encrypted; installed, tested and removed again inside the build)
         env:
           K: ${{ secrets.ESO_ULT_KEY }}
