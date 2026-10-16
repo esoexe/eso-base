@@ -76,6 +76,11 @@ def start():
     global _started
     if _started or os.environ.get("ESO_HANGLOG") != "1":
         return
+    # never inside the app preloader: it fork()s every app, and a watcher thread there makes eso-appd refuse to
+    # fork (correctly: fork copies only one thread). Each app started from it watches itself (esoui/esowait).
+    prog = os.path.basename((sys.argv[0] if sys.argv and sys.argv[0] else "") or "")
+    if prog == "eso-appd" or any(os.path.basename(a) == "eso-appd" for a in (sys.argv or [])[:2]):
+        return
     _started = True
     main_id = threading.main_thread().ident
 
