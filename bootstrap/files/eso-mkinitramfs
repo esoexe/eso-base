@@ -95,7 +95,13 @@ fi
 udevadm trigger --action=add --type=subsystems
 # the display driver of this PC/VM, loaded directly (bochs, virtio-gpu, vmwgfx, ...; firmware framebuffers are built in)
 for d in /sys/bus/pci/devices/*; do
-    case $(cat "$d/class" 2>/dev/null) in 0x03*) modprobe -q "$(cat "$d/modalias")" 2>/dev/null ;; esac
+    case $(cat "$d/class" 2>/dev/null) in 0x03*)
+        # QEMU's "VMware SVGA" imitation: vmwgfx removes the firmware framebuffer, then refuses the device - no
+        # display at all. Skip it there (the firmware framebuffer + Xorg fbdev draw instead). Real VMware and
+        # VirtualBox VMSVGA (same PCI ID, other DMI vendor) keep vmwgfx. Same rule in /etc/modprobe.d for udev.
+        if [ "$(cat "$d/vendor" "$d/device" 2>/dev/null | tr '\n' :)" = "0x15ad:0x0405:" ] &&
+           [ "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)" = QEMU ]; then continue; fi
+        modprobe -q "$(cat "$d/modalias")" 2>/dev/null ;; esac
 done
 shopt -s nullglob; dri=(/dev/dri/*); fbs=(/dev/fb*); drv=(/sys/bus/pci/drivers/{bochs*,virtio*,qxl*,vmw*,vbox*,cirrus*,hyperv*}); shopt -u nullglob
 echo "<5>eso-init: display: dri=[${dri[*]##*/}] fb=[${fbs[*]##*/}] drivers=[${drv[*]##*/}]" > /dev/kmsg

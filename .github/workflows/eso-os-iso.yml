@@ -28,6 +28,7 @@ jobs:
           sudo mkdir -p /mnt/eso && sudo tar --zstd -xpf $N.tar.zst -C /mnt/eso
           rm -f s.zip $N.tar.zst*
           sudo install -m755 bootstrap/files/eso-mkinitramfs /mnt/eso/usr/sbin/eso-mkinitramfs
+          sudo install -Dm644 bootstrap/files/eso-overlay/etc/modprobe.d/eso-vmwgfx-qemu.conf /mnt/eso/etc/modprobe.d/eso-vmwgfx-qemu.conf
           df -h /
       - name: Host packing + test tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 qemu-system-gui ovmf socat ffmpeg xvfb >/dev/null
