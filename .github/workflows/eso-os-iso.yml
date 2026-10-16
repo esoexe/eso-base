@@ -103,7 +103,7 @@ jobs:
           ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
           rm -f vm-console.log selftest-vmware-port.log
           qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga none -device vmware-svga -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
-            -append "vga=0x318 eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
+            -append "vga=0x344 eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
             -display none -serial file:vm-console.log -serial file:selftest-vmware-port.log -no-reboot & q=$!
           for i in $(seq 1 420); do
             if grep -qa "ESO-SELFTEST end" selftest-vmware-port.log vm-console.log 2>/dev/null; then sleep 3; break; fi

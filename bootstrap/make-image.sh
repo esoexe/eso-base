@@ -36,7 +36,9 @@ set default=0
 insmod part_gpt
 insmod ext2
 insmod all_video
-if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1024x768,auto; fi
+# BIOS: a 32-bit (or 16-bit) VESA mode first - Xorg's fallback driver (fbdev, for GPUs without a kernel driver) cannot
+# use packed 24-bit firmware framebuffers, which "1024x768"/"auto" pick on many older video BIOSes
+if [ "\$grub_platform" = "efi" ]; then set gfxpayload=keep; else set gfxpayload=1024x768x32,1280x1024x32,1366x768x32,1280x800x32,800x600x32,640x480x32,1024x768x16,800x600x16,auto; fi
 search --no-floppy --label ESO-ROOT --set=root
 menuentry "ESO OS" {
     linux /boot/vmlinuz-$KV root=LABEL=ESO-ROOT ro preempt=full quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0
