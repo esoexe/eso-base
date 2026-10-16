@@ -292,7 +292,9 @@ key("meta_l", "down"); wait(1.2)
 # 2. Start menu, search
 key("ctrl", "esc"); wait(1.6); shot("03-start")
 type_text("settings"); wait(1.5); shot("04-search")
-key("esc"); wait(0.8)
+# 3.13.17 launch zoom: Enter opens Settings - it grows out of the Start menu, then becomes the real window
+key("ret"); wait(0.12); shot("04a-zoom-grow"); wait(0.25); shot("04b-zoom-landed"); wait(3.0); shot("04c-zoom-window")
+key("alt", "f4"); wait(1.2)
 
 # 3. Files, dragged to the left
 key("meta_l", "e"); wait(3.0); shot("05-files")
