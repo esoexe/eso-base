@@ -74,4 +74,10 @@ jobs:
             shots/*.png
             drive.log
             boot.log
+            shots/HEALTH
           retention-days: 14
+      - name: Desktop health gate
+        if: github.event.inputs.phase == 'demo'
+        run: |
+          cat shots/HEALTH 2>/dev/null || echo "no health result"
+          grep -q '^OK' shots/HEALTH

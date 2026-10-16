@@ -290,7 +290,13 @@ shot("02-dragged-setup")
 key("meta_l", "down"); wait(1.2)
 
 # 2. Start menu, search
+_pre = ppm("pre-start")
 key("ctrl", "esc"); wait(1.6); shot("03-start")
+# Health gate (3.13.18 shipped without a working shell and the demo still "passed"): the Start menu must open.
+_d = changed(_pre, ppm("post-start"))
+HEALTH = "OK" if _d >= 0.02 else f"FAIL: Ctrl+Esc changed {_d:.1%} of the screen - the desktop shell is not running"
+log(f"health: {HEALTH} (start-menu change {_d:.1%})")
+open(f"{SHOTS}/HEALTH", "w").write(HEALTH + "\n")
 type_text("settings"); wait(1.5); shot("04-search")
 # 3.13.17 launch zoom: Enter opens Settings - it grows out of the Start menu, then becomes the real window
 key("ret"); wait(0.12); shot("04a-zoom-grow"); wait(0.25); shot("04b-zoom-landed"); wait(3.0); shot("04c-zoom-window")
