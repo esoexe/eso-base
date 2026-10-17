@@ -114,7 +114,7 @@ jobs:
           grep -E "boot-time|desktop|app-launch|appd-launch|gl-probe|display-tune|xorg:|failed-unit|freeze|mesa" selftest-vmware.txt | head -60
           grep -q "ESO-SELFTEST running: eso-lite-session" selftest-vmware.txt || { grep -aiE "vmwgfx|vesafb|efifb|fb0|drm" vm-console.log | head -20; grep -aE "xorg|session-x-log" selftest-vmware.txt | head -n 80; echo "::error::VMware graphics: no ESO session"; exit 1; }
           if grep -q "appd-launch: .*FAIL" selftest-vmware.txt; then echo "::error::VMware graphics: apps did not open"; exit 1; fi
-          grep -q "display-tune: .*shadowfb=1" selftest-vmware.txt || echo "::warning::VMware graphics: display tune kept glamor"
+          grep -qE "display-tune: .*shadowfb=1|xorg: .*FBDEV\(0\)" selftest-vmware.txt || echo "::warning::VMware graphics: display tune kept glamor"
       - name: Boot test (BIOS DVD, UEFI DVD) through ESO's GRUB - must reach the login prompt
         run: |
           ACC=$([ -w /dev/kvm ] && echo "-enable-kvm -cpu host" || echo "-cpu max")
