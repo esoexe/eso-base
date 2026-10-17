@@ -153,6 +153,8 @@ ldconfig; picom --version; done_ picom
 # 3.13.24: glued cursor - while a window is dragged the compositor draws the cursor in the window's own frames, so the
 # host/GPU cursor can never run ahead of the window (cursor-window gap drift measured: 0 px, like a native desktop).
 # 3.13.25: pointer prediction for glued drags, arrow cursor, fix for stale strips in vsync (mailbox) mode.
+# 3.13.26: the ESO 3.7.4 rule - no compositor in VMs, without a display driver or on weak no-GPU PCs (xfwm4 --compositor=off):
+# the X server moves a dragged window itself, in one piece, glued to the cursor.
 # Measured (tests/dragbench/latency.py, 60 Hz, 1500 px/s): trail 38 -> 26 px tear-free, 12 px with vsync off (VMs).
 step "xfwm4 $V_xfwm4 + ESO mailbox patch"
 unpack xfwm4 "xfwm4-$V_xfwm4.tar.bz2"
