@@ -78,6 +78,8 @@ jobs:
           sleep 0.5
           ffmpeg -loglevel error -y -f x11grab -framerate 60 -video_size 1920x1080 -draw_mouse 0 -i :99 \
             -c:v libx264 -preset ultrafast -crf 16 -threads 2 demo-raw.mkv & ff=$!
+          echo $ff > ff.pid
+          (top -b -d 1 -w 220 -n 400 > top.log 2>&1 &)
           DEMO_PHASE="${{ github.event.inputs.phase }}" python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee drive.log
           sleep 1; kill -INT $ff 2>/dev/null || true; wait $ff 2>/dev/null || true
           # not recorded: a quick diagnostic inside the VM (screenshots only)
@@ -123,6 +125,7 @@ jobs:
             shots/*.txt
             drive.log
             boot.log
+            top.log
             shots/HEALTH
           retention-days: 14
       - name: Desktop health gate

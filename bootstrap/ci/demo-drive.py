@@ -454,6 +454,73 @@ def until(n, secs):
     return have(n)
 
 
+def host_counter(stop, ys, out):
+    """on the HOST screen QEMU draws into: every time these rows change = one new picture of the guest"""
+    import ctypes, ctypes.util, hashlib
+    x = ctypes.CDLL(ctypes.util.find_library("X11"))
+    x.XOpenDisplay.restype = ctypes.c_void_p; x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x.XDefaultRootWindow.restype = ctypes.c_ulong; x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x.XGetImage.restype = ctypes.c_void_p
+    x.XGetImage.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_uint, ctypes.c_uint,
+                            ctypes.c_ulong, ctypes.c_int]
+    x.XFree.argtypes = [ctypes.c_void_p]
+    d = x.XOpenDisplay(os.environ.get("DISPLAY", ":99").encode()); root = x.XDefaultRootWindow(d)
+    last = None
+    while not stop.is_set():
+        h = hashlib.md5()
+        for y in ys:
+            img = x.XGetImage(d, root, 0, int(y), W, 2, 0xFFFFFFFF, 2)
+            if not img:
+                continue
+            data = ctypes.c_void_p.from_address(img + 16).value
+            h.update(ctypes.string_at(data, W * 2 * 4))
+            x.XFree(data); x.XFree(img)
+        k = h.digest()
+        if k != last:
+            out.append(time.time()); last = k
+        time.sleep(0.003)
+
+
+def cadence_report(tag, ts, t0, t1):
+    ts = [t for t in ts if t0 <= t <= t1]
+    if len(ts) < 3:
+        log(f"cadence {tag}: only {len(ts)} changes"); return
+    g = sorted((b - a) * 1000 for a, b in zip(ts, ts[1:]))
+    line = (f"cadence {tag}: {len(ts) / (t1 - t0):.1f} new pictures/s; gap median {g[len(g) // 2]:.1f} ms, "
+            f"p90 {g[int(len(g) * 0.9)]:.1f} ms, max {g[-1]:.0f} ms, gaps over 20 ms {sum(v > 20 for v in g)} of {len(g)}")
+    log(line)
+    with open(f"{SHOTS}/cadence.txt", "a") as f:
+        f.write(line + "\n")
+
+
+if os.environ.get("DEMO_PHASE") == "cadence":
+    import threading, signal
+    log("cadence test; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    for tag in ("A-recording", "B-no-recorder"):
+        if tag.startswith("B"):
+            try:
+                os.kill(int(open("ff.pid").read()), signal.SIGINT); log("recorder stopped")
+            except Exception as e:                       # noqa: BLE001
+                log(f"could not stop the recorder: {e}")
+            wait(3)
+        g = find_title((900, 254))
+        ys = [g[1] + 120, g[1] + 330, g[1] + 520]
+        stop = threading.Event(); ts = []
+        th = threading.Thread(target=host_counter, args=(stop, ys, ts), daemon=True); th.start()
+        move(*g, 0.4); time.sleep(0.3)
+        btn(True); time.sleep(0.15); t0 = time.time() + 0.3
+        path = [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -60), (-100, 0)]
+        glide([(g[0] + dx, g[1] + dy) for (dx, dy) in path], 4.0)
+        t1 = time.time() - 0.1
+        time.sleep(0.08); btn(False); time.sleep(0.5); stop.set(); th.join(2)
+        cadence_report(tag, ts, t0, t1)
+        # idle baseline: how often the rows change when nothing moves (should be ~0)
+        stop = threading.Event(); ts2 = []
+        th = threading.Thread(target=host_counter, args=(stop, ys, ts2), daemon=True); th.start()
+        time.sleep(1.5); stop.set(); th.join(2)
+        log(f"cadence {tag} idle: {len(ts2)} changes in 1.5 s")
+    sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "dragdiag":
     import threading
     dd_server()
