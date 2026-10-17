@@ -6,7 +6,7 @@ on:
         description: "seconds from power-on before the demo starts"
         default: "38"
       gpu:
-        description: "guest display card: virtio (like VirtualBox VMSVGA / VMware SVGA / GNOME Boxes: the guest sends changed rectangles) or vga (QEMU std VGA, framebuffer write-trapping)"
+        description: "guest display card: vmware (vmwgfx like VirtualBox VMSVGA/VMware), virtio (like VirtualBox VMSVGA / VMware SVGA / GNOME Boxes: the guest sends changed rectangles) or vga (QEMU std VGA, framebuffer write-trapping)"
         default: "virtio"
       pointer:
         description: "virtio (virtio tablet, like VirtualBox/VMware mouse integration) or usb (usb-tablet)"
@@ -97,8 +97,11 @@ jobs:
           # std VGA: QEMU finds changed pixels by write-protecting the framebuffer after every refresh; on GitHub's
           # runners (themselves VMs) each of those faults crosses two hypervisors, so a moved window reaches the
           # screen in bands over 3-4 frames. virtio-vga works like VirtualBox/VMware: the guest sends changed rects.
-          if [ "${{ github.event.inputs.gpu }}" = vga ]; then GPU="VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000"
-          else GPU="virtio-vga,edid=on,xres=1920,yres=1080"; fi
+          case "${{ github.event.inputs.gpu }}" in
+            vga)    GPU="VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000" ;;
+            vmware) GPU="vmware-svga,vgamem_mb=32" ;;     # the vmwgfx driver, as in VirtualBox (VMSVGA) and VMware
+            *)      GPU="virtio-vga,edid=on,xres=1920,yres=1080" ;;
+          esac
           echo "guest display card: $GPU"
           # pointer: a virtio tablet delivers every event at once, like VirtualBox/VMware mouse integration (a USB
           # tablet is polled by the guest, so events arrive in clumps of 0-4 per frame)
