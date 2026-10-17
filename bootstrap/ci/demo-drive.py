@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Drive a booted ESO OS VM like a person would, for the full-screen demo recording (CI, eso-os-demo.yml).
-Talks to QEMU over QMP: absolute pointer (usb-tablet) + keyboard. Real-time, nothing sped up.
+Talks to QEMU over QMP: absolute pointer (virtio tablet, or usb-tablet) + keyboard. Real-time, nothing sped up.
 usage: demo-drive.py QMP_SOCKET SHOTS_DIR [WIDTH HEIGHT]"""
 import json, math, os, socket, sys, time
 
@@ -55,9 +55,9 @@ def absxy(x, y):
 
 
 def move(x, y, secs=0.0):
-    """glide the pointer (60 updates/s) so the recording shows a real hand movement"""
+    """glide the pointer (250 updates/s) so the recording shows a real hand movement"""
     x0, y0 = cur
-    n = max(1, int(secs * 60))
+    n = max(1, int(secs * 250))
     for i in range(1, n + 1):
         t = i / n
         t = t * t * (3 - 2 * t)                             # ease in/out
@@ -111,10 +111,14 @@ def alt_drag(path, secs):
     ev({"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "alt"}}})
 
 
-def glide(path, secs, hz=120):
+INPUT_HZ = int(os.environ.get("DEMO_INPUT_HZ", "500"))   # like a real mouse through VirtualBox/VMware (500-1000 Hz)
+
+
+def glide(path, secs, hz=None):
     """one continuous hand movement through all points of path (a smooth Catmull-Rom curve, constant speed along
     it, easing only at the very start and end), at hz input updates/s on absolute deadlines (no drift, no pauses
     at the points - the old per-point ease made the window stop and go)"""
+    hz = hz or INPUT_HZ
     pts = [tuple(cur)] + [tuple(p) for p in path]
     if len(pts) < 2:
         return
