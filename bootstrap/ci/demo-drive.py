@@ -255,6 +255,148 @@ print('probe done')"
 """
 GRAB = """python3 -c "import gi;gi.require_version('Gtk','3.0');from gi.repository import Gtk,Gdk;s=Gdk.Display.get_default().get_default_seat();r=s.grab(Gdk.get_default_root_window(),Gdk.SeatCapabilities.POINTER,False,None,None,None,None);print('X POINTER GRAB TEST:',r.value_nick)"
 """
+
+# ---- dragdiag: what really happens inside the VM during a window drag --------------------------------------------
+# The guest fetches a probe from this script over QEMU's user network (host = 10.0.2.2) and posts its results back.
+# The probe logs, every ~5 ms, the pointer and where X has the dragged window, and grabs the X framebuffer mid-drag;
+# the host takes QEMU screendumps at the same moments. Window not moving in the log -> the window manager;
+# moving in the log but not in the guest grab -> the X server/driver; moving in both but not on QEMU's screen -> QEMU.
+GUEST_PROBE = r"""
+import gi, os, sys, time, glob, subprocess, urllib.request
+gi.require_version('Gdk', '3.0')
+from gi.repository import Gdk
+H = 'http://10.0.2.2:8765/'
+def put(name, data):
+    if isinstance(data, str): data = data.encode()
+    urllib.request.urlopen(urllib.request.Request(H + name, data=data, method='POST'), timeout=10).read()
+def sh(c):
+    try: return subprocess.run(c, shell=True, capture_output=True, text=True, timeout=10).stdout
+    except Exception as e: return str(e)
+info = []
+for lg in [os.path.expanduser('~/.local/share/xorg/Xorg.0.log'), '/var/log/Xorg.0.log']:
+    if os.path.exists(lg):
+        info.append('== ' + lg); info.append(sh("grep -aE 'LoadModule|Loading /|driver|Using|shadow|glamor|DRI|cursor|Cursor|PageFlip|TearFree|AccelMethod|Output|Modeline|modeset\\(|fbdev\\(' " + lg + " | head -80"))
+info.append('== fb ' + sh('cat /proc/fb'))
+info.append('== drm ' + sh('for d in /sys/class/drm/card*; do echo $d $(readlink -f $d/device/driver); done'))
+info.append('== xfwm4 ' + sh('ps -o args= -C xfwm4'))
+info.append('== perf ' + sh('eso-perf compositor; xfconf-query -c xfwm4 -p /general/use_compositing; xfconf-query -c xfwm4 -p /general/box_move; cat ~/.config/eso/eso.conf 2>/dev/null | head -20'))
+info.append('== virt ' + sh('systemd-detect-virt'))
+info.append('== inputs ' + sh('cat /proc/bus/input/devices | grep -E "^N:"'))
+info.append('== xinput ' + sh('xinput list 2>&1 | head -20'))
+put('dd-info.txt', '\n'.join(info))
+import ctypes, ctypes.util
+X = ctypes.CDLL(ctypes.util.find_library('X11'))
+X.XOpenDisplay.restype = ctypes.c_void_p; X.XOpenDisplay.argtypes = [ctypes.c_char_p]
+X.XDefaultRootWindow.restype = ctypes.c_ulong; X.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+X.XInternAtom.restype = ctypes.c_ulong; X.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+X.XGetWindowProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_long, ctypes.c_long, ctypes.c_int,
+    ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_ulong),
+    ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_void_p)]
+X.XFetchName.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char_p)]
+X.XTranslateCoordinates.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_ulong)]
+X.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+    ctypes.POINTER(ctypes.c_uint)]
+dp = X.XOpenDisplay(None); xr = X.XDefaultRootWindow(dp)
+def clients():
+    at, fm, n, ba, pr = ctypes.c_ulong(), ctypes.c_int(), ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_void_p()
+    X.XGetWindowProperty(dp, xr, X.XInternAtom(dp, b'_NET_CLIENT_LIST', 0), 0, 1024, 0, 0, ctypes.byref(at),
+                         ctypes.byref(fm), ctypes.byref(n), ctypes.byref(ba), ctypes.byref(pr))
+    return list(ctypes.cast(pr, ctypes.POINTER(ctypes.c_ulong))[:n.value]) if pr.value else []
+xid = None
+for c in clients():
+    nm = ctypes.c_char_p()
+    if X.XFetchName(dp, c, ctypes.byref(nm)) and nm.value and b'ESO Setup' in nm.value: xid = c
+def wpos():
+    if xid is None: return -1, -1
+    x, y, ch = ctypes.c_int(), ctypes.c_int(), ctypes.c_ulong()
+    X.XTranslateCoordinates(dp, xid, xr, 0, 0, ctypes.byref(x), ctypes.byref(y), ctypes.byref(ch)); return x.value, y.value
+def ppos():
+    r, c, a, b, d, e, m = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_uint()
+    X.XQueryPointer(dp, xr, ctypes.byref(r), ctypes.byref(c), ctypes.byref(a), ctypes.byref(b), ctypes.byref(d), ctypes.byref(e), ctypes.byref(m))
+    return a.value, b.value, m.value
+disp = Gdk.Display.get_default(); root = Gdk.get_default_root_window()
+put('dd-ready.txt', 'win %s' % xid)
+t0 = time.time(); rows = []; grabs = [3.5, 4.5, 5.5]
+while time.time() - t0 < 12:
+    t = time.time() - t0
+    px, py, mask = ppos(); ox, oy = wpos()
+    rows.append('%.4f %d %d %d %d %d' % (t, px, py, ox, oy, mask))
+    if grabs and t >= grabs[0]:
+        g = grabs.pop(0)
+        pb = Gdk.pixbuf_get_from_window(root, 0, 0, root.get_width(), root.get_height())
+        ok, buf = pb.scale_simple(960, 540, 2).save_to_bufferv('png', [], [])
+        put('dd-guest-%.1f.png' % g, bytes(buf)); rows.append('%.4f GRAB %.1f' % (time.time() - t0, g))
+    time.sleep(0.004)
+put('dd-track.txt', '\n'.join(rows))
+put('dd-done.txt', 'ok')
+"""
+
+
+def dd_server():
+    import http.server, threading
+
+    class Hd(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            b = GUEST_PROBE.encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers()
+            self.wfile.write(b)
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0)); data = self.rfile.read(n)
+            name = os.path.basename(self.path.strip("/")) or "post.bin"
+            open(os.path.join(SHOTS, name), "wb").write(data)
+            log(f"probe posted {name} ({n} bytes)")
+            self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0", 8765), Hd)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+
+if os.environ.get("DEMO_PHASE") == "dragdiag":
+    dd_server()
+    log("drag diagnostics; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    SETUP_T = (900, 254)
+    key("meta_l", "ret"); wait(3.5)
+    type_text("python3 -c \"import urllib.request as u;exec(u.urlopen('http://10.0.2.2:8765/p').read())\" > /tmp/dd.log 2>&1 &\n")
+    wait(1.0)
+    type_text("sleep 20; cat /tmp/dd.log\n")
+    wait(0.5); key("meta_l", "down"); wait(1.0)            # the terminal out of the way: ESO Setup on top
+    t_end = time.time() + 40
+    while not os.path.exists(os.path.join(SHOTS, "dd-ready.txt")) and time.time() < t_end:
+        time.sleep(0.05)
+    tr = time.time(); log(f"probe ready: {os.path.exists(os.path.join(SHOTS, 'dd-ready.txt'))}")
+    move(*SETUP_T, 0.5)
+    while time.time() < tr + 2.0:
+        time.sleep(0.005)
+    log("drag start (probe t=2.0)")
+    btn(True); time.sleep(0.12)
+    import threading
+    def dumps():
+        for g in (3.5, 4.5, 5.5):
+            while time.time() < tr + g:
+                time.sleep(0.002)
+            q2.cmd("screendump", filename=os.path.abspath(f"{SHOTS}/dd-qemu-{g:.1f}.ppm"))
+    lock = threading.Lock(); orig = QMP.cmd
+    def locked(self, name, **a):
+        with lock:
+            return orig(self, name, **a)
+    QMP.cmd = locked                                       # one QMP socket, shared by the drag and the dumps
+    q2 = q
+    th = threading.Thread(target=dumps); th.start()
+    glide([(SETUP_T[0] + dx, SETUP_T[1] + dy) for (dx, dy) in
+           [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -110)]], 4.0)
+    time.sleep(0.08); btn(False)
+    log("drag end"); th.join()
+    t_end = time.time() + 30
+    while not os.path.exists(os.path.join(SHOTS, "dd-done.txt")) and time.time() < t_end:
+        time.sleep(0.2)
+    wait(12); key("alt", "tab"); wait(2); shot("dd-terminal")
+    sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "bootdiag":
     # why the first title-bar drag after boot did nothing: QEMU mouse routing, or an X pointer grab in ESO?
     log("boot diagnostics; waiting for the desktop")

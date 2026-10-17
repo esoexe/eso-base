@@ -6,7 +6,7 @@ on:
         description: "seconds from power-on before the demo starts"
         default: "38"
       phase:
-        description: "demo = the recording; bootdiag = input diagnostics after boot; closediag = Alt+F4 shell test"
+        description: "demo = the recording; bootdiag = input diagnostics after boot; closediag = Alt+F4 shell test; dragdiag = in-VM window drag probe"
         default: "demo"
 permissions:
   actions: read
@@ -120,6 +120,7 @@ jobs:
             eso-os-demo-1080p.mp4
             xorg.log
             shots/*.png
+            shots/*.txt
             drive.log
             boot.log
             shots/HEALTH
