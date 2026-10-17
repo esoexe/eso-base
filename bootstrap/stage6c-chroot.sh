@@ -191,6 +191,31 @@ install -d /usr/share/eso-native
 install -m755 build/hw/xfree86/drivers/modesetting/modesetting_drv.so /usr/share/eso-native/modesetting_drv.so  # for the deb
 echo "  modesetting $V_xorgserver + ESO async dirty updates installed"; done_ xorgserver
 
+# ESO 4.0.2: virtio-gpu without the simulated vblank (QEMU/KVM, virt-manager, GNOME Boxes, Proxmox). Since 6.19 every
+# commit waits for a guest hrtimer "vblank". The host repaints on its own 60 Hz timer from the same host clock, so the
+# two lock at an arbitrary phase; near zero the host randomly sees the old or the new frame and a dragged window
+# repeats a frame, then jumps two (measured: guest commits at a perfect 60/s, only ~37 different frames/s on screen).
+# Without the timer every commit completes at once (as before 6.19, and as vmwgfx does in VirtualBox/VMware) and the
+# host shows the newest picture at its refresh; the X server sends the updates from its async thread (above).
+# Only this module is rebuilt, against the installed kernel's own config; it goes to updates/ (ahead of the stock
+# one for modprobe, udev and eso-mkinitramfs). virtio_gpu.vblank_timer=1 on the kernel command line restores the timer.
+KV=$(ls /usr/lib/modules | head -n 1)
+step "virtio-gpu for $KV without the simulated vblank"
+unpack linux "linux-$V_linux.tar.xz"
+cp "/boot/config-$KV" .config
+patch -p1 < /sources/files/virtio-gpu-eso-no-vblank-timer.patch
+quiet make -s olddefconfig
+[ "$(make -s kernelrelease)" = "$KV" ] || { echo "FAILED: kernel release $(make -s kernelrelease) != $KV"; exit 1; }
+quiet make -j"$(nproc)" modules_prepare
+quiet make -j"$(nproc)" M=drivers/gpu/drm/virtio KBUILD_MODPOST_WARN=1 modules
+strip --strip-debug drivers/gpu/drm/virtio/virtio-gpu.ko
+install -D -m644 drivers/gpu/drm/virtio/virtio-gpu.ko "/usr/lib/modules/$KV/updates/virtio-gpu.ko"
+depmod -a "$KV"
+modinfo -k "$KV" -n virtio_gpu | grep -q /updates/ || { echo "FAILED: modprobe does not pick the ESO virtio-gpu"; exit 1; }
+modinfo -k "$KV" -p virtio_gpu | grep -q vblank_timer || { echo "FAILED: ESO virtio-gpu patch missing"; exit 1; }
+eso-mkinitramfs "$KV" >/dev/null
+echo "  virtio-gpu (no simulated vblank) installed: $(modinfo -k "$KV" -n virtio_gpu)"; done_ linux
+
 # ───────────────────────────── the ESO desktop ─────────────────────────────
 step "ESO desktop $V_esodesktop (eso-desktop package, installed by ESO's own installer: no dpkg)"
 python3 -c "import lzma, tarfile, hashlib, ssl" || { echo "FAILED: python3 lacks lzma/ssl (needed by ESO updates)"; exit 1; }

@@ -1,0 +1,61 @@
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-17 23:51:36.608469467 +0000
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-17 23:51:43.920469467 +0000
+@@ -25,6 +25,8 @@
+  * OTHER DEALINGS IN THE SOFTWARE.
+  */
+ 
++#include <linux/moduleparam.h>
++
+ #include <drm/drm_atomic_helper.h>
+ #include <drm/drm_damage_helper.h>
+ #include <drm/drm_edid.h>
+@@ -100,10 +102,23 @@
+ 	virtio_gpu_notify(vgdev);
+ }
+ 
++/*
++ * ESO: the simulated vblank (a guest hrtimer, since 6.19) is opt-in. It paces every commit - including each DIRTYFB of
++ * a shadow-buffer X server - to a guest timer that is not the host's refresh. Host and guest then run two 60 Hz
++ * clocks off the same host clock, phase-locked at an arbitrary offset: near zero the host's repaint randomly sees
++ * the old or the new frame (a moved window repeats a frame, then jumps two). Without it every commit completes as soon
++ * as the host has the update (the behaviour before 6.19, and how vmwgfx in VirtualBox/VMware works) and the host
++ * shows the newest picture at its own refresh. virtio_gpu.vblank_timer=1 brings the timer back.
++ */
++static bool virtio_gpu_vblank_timer;
++MODULE_PARM_DESC(vblank_timer, "Simulate vblank with a guest timer (default: off, commits complete at once)");
++module_param_named(vblank_timer, virtio_gpu_vblank_timer, bool, 0400);
++
+ static void virtio_gpu_crtc_atomic_enable(struct drm_crtc *crtc,
+ 					  struct drm_atomic_commit *state)
+ {
+-	drm_crtc_vblank_on(crtc);
++	if (drm_dev_has_vblank(crtc->dev))
++		drm_crtc_vblank_on(crtc);
+ }
+ 
+ static void virtio_gpu_crtc_atomic_disable(struct drm_crtc *crtc,
+@@ -113,7 +128,8 @@
+ 	struct virtio_gpu_device *vgdev = dev->dev_private;
+ 	struct virtio_gpu_output *output = drm_crtc_to_virtio_gpu_output(crtc);
+ 
+-	drm_crtc_vblank_off(crtc);
++	if (drm_dev_has_vblank(dev))
++		drm_crtc_vblank_off(crtc);
+ 
+ 	virtio_gpu_cmd_set_scanout(vgdev, output->index, 0, 0, 0, 0, 0);
+ 	virtio_gpu_notify(vgdev);
+@@ -381,9 +397,11 @@
+ 	for (i = 0 ; i < vgdev->num_scanouts; ++i)
+ 		vgdev_output_init(vgdev, i);
+ 
+-	ret = drm_vblank_init(vgdev->ddev, vgdev->num_scanouts);
+-	if (ret)
+-		return ret;
++	if (virtio_gpu_vblank_timer) {
++		ret = drm_vblank_init(vgdev->ddev, vgdev->num_scanouts);
++		if (ret)
++			return ret;
++	}
+ 
+ 	drm_mode_config_reset(vgdev->ddev);
+ 	return 0;
