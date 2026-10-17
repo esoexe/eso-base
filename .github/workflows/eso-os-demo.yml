@@ -5,6 +5,9 @@ on:
       boot_wait:
         description: "seconds from power-on before the demo starts"
         default: "38"
+      gpu:
+        description: "guest display card: virtio (like VirtualBox VMSVGA / VMware SVGA / GNOME Boxes: the guest sends changed rectangles) or vga (QEMU std VGA, framebuffer write-trapping)"
+        default: "virtio"
       phase:
         description: "demo = the recording; bootdiag = input diagnostics after boot; closediag = Alt+F4 shell test; dragdiag = in-VM window drag probe"
         default: "demo"
@@ -88,7 +91,13 @@ jobs:
             rm -f frames.fifo; mkfifo frames.fifo
             export ESO_REFRESH_HZ=60 ESO_FRAME_FIFO=$PWD/frames.fifo ESO_FRAME_SIZE=1920x1080
           fi
-          $QEMU $ACC -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000 \
+          # std VGA: QEMU finds changed pixels by write-protecting the framebuffer after every refresh; on GitHub's
+          # runners (themselves VMs) each of those faults crosses two hypervisors, so a moved window reaches the
+          # screen in bands over 3-4 frames. virtio-vga works like VirtualBox/VMware: the guest sends changed rects.
+          if [ "${{ github.event.inputs.gpu }}" = vga ]; then GPU="VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000"
+          else GPU="virtio-vga,edid=on,xres=1920,yres=1080"; fi
+          echo "guest display card: $GPU"
+          $QEMU $ACC -m 4096 -smp 4 -vga none -device $GPU \
             -device qemu-xhci -device usb-tablet \
             -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \

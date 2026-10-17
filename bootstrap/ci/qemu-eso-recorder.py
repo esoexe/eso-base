@@ -182,6 +182,9 @@ new_arm = """    ds->last_update = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
         while (eso_next_ns <= now) {                     /* fell a whole frame behind: skip it, keep the phase */
             eso_next_ns += eso_step_ns;
             eso_missed++;
+            if (eso_fifo) {
+                eso_tap();                               /* the film keeps real time: the picture is shown again */
+            }
         }
         timer_mod_ns(ds->gui_timer, eso_next_ns);
         if (now - eso_stat_t0 >= 2000000000LL) {
