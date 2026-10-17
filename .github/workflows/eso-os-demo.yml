@@ -28,6 +28,17 @@ jobs:
           curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o i.zip \
                "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"
           unzip -q i.zip && rm i.zip && sha256sum -c eso-os-x86_64.iso.sha256
+      - name: Demo recorder QEMU (fixed 60 Hz refresh, frames straight to the encoder)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(GITHUB_REPOSITORY="${{ github.repository }}" python3 bootstrap/ci/newest-artifact.py qemu-eso-recorder || true)
+          if [ -n "$id" ] && curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o r.zip \
+               "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id/zip"; then
+            unzip -q r.zip && rm r.zip && sudo tar -C /opt -xzf qemu-eso.tgz && rm qemu-eso.tgz && echo "recorder QEMU ready"
+          else
+            echo "no recorder QEMU - stock QEMU + screen capture"
+          fi
       - name: Tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso qemu-system-x86 qemu-system-gui socat ffmpeg xserver-xorg-core xserver-xorg-video-dummy x11-xserver-utils >/dev/null
       - name: Boot + drive + record the full screen
@@ -69,15 +80,29 @@ jobs:
           for i in $(seq 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
           export DISPLAY=:99
           xrandr 2>&1 | head -3
-          qemu-system-x86_64 $ACC -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080 \
+          # the guest's monitor is 60 Hz like VirtualBox/VMware/most screens (QEMU's default EDID says 75 Hz, and a
+          # 75 Hz picture filmed at 60 fps judders by itself)
+          QEMU=qemu-system-x86_64; REC=0
+          if [ -x /opt/qemu-eso/bin/qemu-system-x86_64 ]; then
+            QEMU="/opt/qemu-eso/bin/qemu-system-x86_64 -L /opt/qemu-eso/share/qemu"; REC=1
+            rm -f frames.fifo; mkfifo frames.fifo
+            export ESO_REFRESH_HZ=60 ESO_FRAME_FIFO=$PWD/frames.fifo ESO_FRAME_SIZE=1920x1080
+          fi
+          $QEMU $ACC -m 4096 -smp 4 -vga none -device VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000 \
             -device qemu-xhci -device usb-tablet \
             -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
             -display gtk,zoom-to-fit=off,show-menubar=off,show-tabs=off,gl=off -full-screen \
-            -serial file:boot.log -qmp unix:qmp.sock,server,nowait -no-reboot & q=$!
-          sleep 0.5
-          ffmpeg -loglevel error -y -f x11grab -framerate 60 -video_size 1920x1080 -draw_mouse 0 -i :99 \
-            -c:v libx264 -preset ultrafast -crf 16 -threads 2 demo-raw.mkv & ff=$!
+            -serial file:boot.log -qmp unix:qmp.sock,server,nowait -no-reboot 2> qemu.log & q=$!
+          if [ $REC = 1 ]; then
+            # one video frame per guest display refresh, taken by QEMU itself on a steady 60 Hz beat
+            ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgr0 -video_size 1920x1080 -framerate 60 -thread_queue_size 64 \
+              -i frames.fifo -c:v libx264 -preset ultrafast -crf 16 -threads 2 demo-raw.mkv & ff=$!
+          else
+            sleep 0.5
+            ffmpeg -loglevel error -y -f x11grab -framerate 60 -video_size 1920x1080 -draw_mouse 0 -i :99 \
+              -c:v libx264 -preset ultrafast -crf 16 -threads 2 demo-raw.mkv & ff=$!
+          fi
           echo $ff > ff.pid
           (top -b -d 1 -w 220 -n 400 > top.log 2>&1 &)
           DEMO_PHASE="${{ github.event.inputs.phase }}" python3 bootstrap/ci/demo-drive.py qmp.sock shots 1920 1080 | tee drive.log
@@ -126,6 +151,7 @@ jobs:
             drive.log
             boot.log
             top.log
+            qemu.log
             shots/HEALTH
           retention-days: 14
       - name: Desktop health gate
