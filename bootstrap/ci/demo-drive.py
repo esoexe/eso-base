@@ -198,10 +198,43 @@ def mice():
         return f"query-mice failed: {e}"
 
 
+def find_title(grab, img=None):
+    """the title bar under grab[0], nearest to grab[1]: windows open where startup timing puts them, so look, don't
+    assume. xfwm4's ESO title bar is a flat band (~30 px, close to #1F2328) right above the window content."""
+    try:
+        b = img or ppm("title")
+        x = int(grab[0]); best = None
+        px = lambda xx, yy: b[(yy * W + xx) * 3:(yy * W + xx) * 3 + 3]
+        y = max(40, int(grab[1]) - 140)
+        while y < min(H - 80, int(grab[1]) + 140):
+            c = px(x, y)
+            if abs(c[0] - 31) <= 12 and abs(c[1] - 35) <= 12 and abs(c[2] - 40) <= 12:
+                y2 = y
+                while y2 + 1 < H and all(abs(px(x, y2 + 1)[i] - c[i]) <= 3 for i in range(3)):
+                    y2 += 1
+                n = y2 - y + 1
+                if 20 <= n <= 44 and all(abs(px(min(W - 1, x + 150), (y + y2) // 2)[i] - c[i]) <= 3 for i in range(3)):
+                    mid = (y + y2) // 2
+                    if best is None or abs(mid - grab[1]) < abs(best - grab[1]):
+                        best = mid
+                y = y2 + 1
+            else:
+                y += 1
+        if best is not None and best != grab[1]:
+            log(f"title bar found at y={best} (expected {grab[1]})")
+            return (grab[0], best)
+    except Exception as e:                               # noqa: BLE001
+        log(f"find_title: {e}")
+    return grab
+
+
 def drag_window(grab, path, secs, name):
     """move the window smoothly; verify it really moved, else try Alt+drag, then the keyboard move"""
     log(f"drag {name}: mice = {mice()}")
     before = ppm(name + "-a")
+    t = find_title(grab, before)
+    if t != grab:                                        # the whole path moves with the grab point
+        path = [(x, y + t[1] - grab[1]) for (x, y) in path]; grab = t
     end = path[-1]
     mid = []
 
@@ -440,6 +473,7 @@ if os.environ.get("DEMO_PHASE") == "dragdiag":
     for tag in ("A", "B"):
         if tag == "B":
             log(f"switched: {until('dd-switched.txt', 30)}"); wait(1.0)
+        SETUP_T = find_title(SETUP_T)
         move(*SETUP_T, 0.4); wait(0.3)
         GO.add("go-" + tag); tg = time.time(); log(f"go {tag}")
         while time.time() < tg + 1.0:
