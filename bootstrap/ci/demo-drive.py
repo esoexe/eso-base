@@ -18,10 +18,15 @@ class QMP:
             except OSError:
                 time.sleep(0.2)
         self.f = self.s.makefile("rw")
+        self.lk = __import__("threading").Lock()            # one socket: the drag and the mid-drag dumps share it
         self.f.readline()                                   # greeting
         self.cmd("qmp_capabilities")
 
     def cmd(self, name, **args):
+        with self.lk:
+            return self._cmd(name, **args)
+
+    def _cmd(self, name, **args):
         self.f.write(json.dumps({"execute": name, "arguments": args} if args else {"execute": name}) + "\n")
         self.f.flush()
         while True:
@@ -198,10 +203,22 @@ def drag_window(grab, path, secs, name):
     log(f"drag {name}: mice = {mice()}")
     before = ppm(name + "-a")
     end = path[-1]
+    mid = []
+
+    def middump():                                       # WHILE the pointer still moves: does the screen follow?
+        time.sleep(0.72 + secs * 0.25); mid.append(ppm(name + "-m1"))
+        time.sleep(min(0.4, secs * 0.25)); mid.append(ppm(name + "-m2"))
+    th = __import__("threading").Thread(target=middump, daemon=True); th.start()
     title_drag(grab, path, secs)
+    th.join(5)
     c = changed(before, ppm(name + "-b"))
     if c > 0.02:
-        log(f"drag {name}: title bar ok ({c:.0%} of the screen changed)"); return
+        m = changed(mid[0], mid[1]) if len(mid) == 2 else -1
+        log(f"drag {name}: title bar ok ({c:.0%} of the screen changed); mid-drag "
+            + (f"FROZEN: the screen did not follow the pointer ({m:.1%})" if 0 <= m < 0.004 else f"live ({m:.1%})"))
+        with open(f"{SHOTS}/middrag.txt", "a") as f:
+            f.write(f"{name} {'FROZEN' if 0 <= m < 0.004 else 'live'} {m:.4f}\n")
+        return
     log(f"drag {name}: title bar did nothing ({c:.1%}), trying Alt+drag")
     move(grab[0], grab[1] + 120, 0.3)
     alt_drag([(x, y + 120) for (x, y) in path], secs)
