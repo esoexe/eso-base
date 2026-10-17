@@ -32,7 +32,7 @@ jobs:
           sudo install -m755 bootstrap/files/eso-overlay/usr/libexec/eso-selftest /mnt/eso/usr/libexec/eso-selftest
           df -h /
       - name: Host packing + test tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 qemu-system-gui ovmf socat ffmpeg xvfb >/dev/null
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xorriso mtools squashfs-tools dosfstools qemu-system-x86 qemu-system-gui ovmf socat ffmpeg xvfb xdotool >/dev/null
       - name: Build the ESO OS ISO
         run: |
           sudo ESO=/mnt/eso ESO_ISO_EDITION=os bash bootstrap/make-iso.sh eso-os-x86_64.iso
@@ -55,6 +55,10 @@ jobs:
           qemu-system-x86_64 $ACC -m 4096 -smp 2 -vga std -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS eso.selftest quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
             -display sdl,show-cursor=off -serial file:boot-desktop.log -serial file:selftest-port.log -monitor unix:mon.sock,server,nowait -no-reboot & q=$!
+          # no window manager: SDL opens the window centred at 640x480 and keeps that corner when the guest switches to
+          # 1280x800, so the recording showed the screen shifted right/down. Keep QEMU's window at 0,0 while it records.
+          ( for i in $(seq 600); do xdotool search --pid $q 2>/dev/null | while read w; do xdotool windowmove $w 0 0 2>/dev/null; done
+              kill -0 $q 2>/dev/null || break; sleep 0.2; done ) & pin=$!
           sleep 1
           for i in $(seq -w 1 480); do          # one frame per second for up to 8 minutes, from power-on
             echo "screendump frames/f$i.ppm" | socat - UNIX-CONNECT:mon.sock >/dev/null 2>&1 || true
