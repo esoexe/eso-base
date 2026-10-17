@@ -152,6 +152,7 @@ ldconfig; picom --version; done_ picom
 # mailbox Present (a newer frame replaces the queued one at the same vblank), paced repaints, no 500 ms stall.
 # 3.13.24: glued cursor - while a window is dragged the compositor draws the cursor in the window's own frames, so the
 # host/GPU cursor can never run ahead of the window (cursor-window gap drift measured: 0 px, like a native desktop).
+# 3.13.25: pointer prediction for glued drags, arrow cursor, fix for stale strips in vsync (mailbox) mode.
 # Measured (tests/dragbench/latency.py, 60 Hz, 1500 px/s): trail 38 -> 26 px tear-free, 12 px with vsync off (VMs).
 step "xfwm4 $V_xfwm4 + ESO mailbox patch"
 unpack xfwm4 "xfwm4-$V_xfwm4.tar.bz2"

@@ -42,7 +42,7 @@
  #ifdef HAVE_PRESENT_EXTENSION
  static void
  present_error (ScreenInfo *screen_info, int error_code)
-@@ -1926,6 +1952,24 @@
+@@ -1926,6 +1952,31 @@
      screen_info->use_present = FALSE;
  }
  
@@ -64,10 +64,17 @@
 +    return v;
 +}
 +
++/* ESO: serial of the newest frame handed to Present. A frame replaced by a newer one (mailbox) still gets a
++ * CompleteNotify ("skipped"); only the newest frame's completion means nothing is queued anymore. Clearing
++ * present_pending on the skipped one let the next frame queue up behind the newer one and xfwm4 repaint a buffer
++ * the X server had not shown yet: stale/black strips while dragging with vsync. */
++static guint32 eso_present_last;
++static gboolean eso_present_any;
++
  static void
  present_flip (ScreenInfo *screen_info, XserverRegion region, gushort buffer)
  {
-@@ -1939,9 +1983,13 @@
+@@ -1939,9 +1990,15 @@
  
      display_info = screen_info->display_info;
      myDisplayErrorTrapPush (display_info);
@@ -75,6 +82,8 @@
 +     * buffer without an update region; the X server then drops the queued frame and shows this
 +     * newer one at the same vblank (present_scmd.c: "don't bother doing the previous one").
 +     * The buffers stay complete thanks to the prevDamage union in repair_screen(). */
++    eso_present_last = present_serial;
++    eso_present_any = TRUE;
      XPresentPixmap (display_info->dpy, screen_info->output,
                      screen_info->rootPixmap[buffer],
 -                    present_serial++, None, region, 0, 0, None, None, None,
@@ -82,7 +91,7 @@
                      PresentOptionNone, 0, 1, 0, NULL, 0);
      result = myDisplayErrorTrapPop (display_info);
  
-@@ -2593,6 +2641,11 @@
+@@ -2593,6 +2650,11 @@
          }
      }
  
@@ -94,7 +103,7 @@
      TRACE ("copying data back to screen");
  #ifdef HAVE_EPOXY
      if (screen_info->use_glx)
-@@ -2705,12 +2758,24 @@
+@@ -2705,12 +2767,24 @@
       * We do not paint the screen because we are waiting for
       * a pending present notification, do not cancel the callback yet...
       */
@@ -120,7 +129,7 @@
  
  #ifdef HAVE_EPOXY
      /*
-@@ -4170,7 +4235,15 @@
+@@ -4170,7 +4244,15 @@
      TRACE ("window 0x%lx", ev->window);
  
      screen_info = myDisplayGetScreenFromRoot (display_info, ev->window);
@@ -137,7 +146,19 @@
      {
          update_cursor (screen_info);
      }
-@@ -4687,6 +4760,63 @@
+@@ -4220,6 +4302,11 @@
+         screen_info = (ScreenInfo *) list->data;
+         if (screen_info->output == ev->window)
+         {
++             if (eso_mailbox () && eso_present_any && ev->serial_number != eso_present_last)
++             {
++                 DBG ("an older (replaced) frame completed, the newest one is still queued");
++                 break;
++             }
+              DBG ("present completed, present pending cleared");
+              screen_info->present_pending = FALSE;
+              break;
+@@ -4687,6 +4774,99 @@
      }
  #endif /* HAVE_COMPOSITOR */
  }
@@ -163,6 +184,42 @@
 +    XFixesHideCursor (screen_info->display_info->dpy, screen_info->xroot);
 +    expose_area (screen_info, &screen_info->cursorLocation, 1);
 +#endif /* HAVE_COMPOSITOR */
++}
++
++gboolean
++compositorEsoGlueActive (ScreenInfo *screen_info)
++{
++#ifdef HAVE_COMPOSITOR
++    return eso_glue_on;
++#else
++    return FALSE;
++#endif /* HAVE_COMPOSITOR */
++}
++
++/* ESO: how far ahead (ms) a glued drag predicts the pointer, to hide the time between the hand moving and the
++   frame being on screen. Vsync waits for the next refresh, so it gets a longer lead. ESO_XFWM_PREDICT_MS=0 turns
++   prediction off, any other value 1..60 overrides the lead. */
++int
++compositorEsoPredictMs (ScreenInfo *screen_info)
++{
++    static int env = -2;
++
++    if (env == -2)
++    {
++        const gchar *e = g_getenv ("ESO_XFWM_PREDICT_MS");
++        env = (e && *e) ? CLAMP (atoi (e), 0, 60) : -1;
++    }
++    if (env >= 0)
++    {
++        return env;
++    }
++#ifdef HAVE_COMPOSITOR
++    if (screen_info->use_present || screen_info->use_glx)
++    {
++        return 16;
++    }
++#endif /* HAVE_COMPOSITOR */
++    return 12;
 +}
 +
 +void
@@ -203,28 +260,255 @@
  compositorInitDisplay (DisplayInfo *display_info)
 --- a/src/compositor.h
 +++ b/src/compositor.h
-@@ -36,6 +36,9 @@
+@@ -36,6 +36,11 @@
  
  gboolean                 compositorIsUsable                     (DisplayInfo *);
  gboolean                 compositorIsActive                     (ScreenInfo *);
 +void                     compositorEsoGlueBegin                 (ScreenInfo *, int, int);
 +void                     compositorEsoGlueMove                  (ScreenInfo *, int, int);
++gboolean                 compositorEsoGlueActive                 (ScreenInfo *);
++int                      compositorEsoPredictMs                  (ScreenInfo *);
 +void                     compositorEsoGlueEnd                   (ScreenInfo *);
  void                     compositorAddWindow                    (DisplayInfo *,
                                                                   Window,
                                                                   Client *);
 --- a/src/moveresize.c
 +++ b/src/moveresize.c
-@@ -1104,6 +1104,8 @@
+@@ -27,6 +27,7 @@
+ 
+ #include <X11/X.h>
+ #include <X11/Xlib.h>
++#include <math.h>
+ #include <X11/Xutil.h>
+ #include <X11/Xatom.h>
+ #include <X11/XKBlib.h>
+@@ -70,6 +71,7 @@
+ typedef struct _MoveResizeData MoveResizeData;
+ struct _MoveResizeData
+ {
++    int eso_qx, eso_qy;                    /* ESO: where window + drawn cursor were put (predicted pointer) */
+     Client *c;
+     WireFrame *wireframe;
+     gboolean use_keys;
+@@ -866,6 +868,153 @@
+     return FALSE;
+ }
+ 
++/* ESO: pointer prediction for glued drags (the compositor draws the cursor in the window's frames, so window and
++   cursor are moved ahead together by the same amount and stay glued). Velocity comes from the X event times over a
++   ~24 ms window (robust for 125 Hz mice and 1000 Hz gaming mice alike); slow, precise moves get no prediction; when
++   the hand stops, the lead eases back to the exact pointer within ~50 ms; on release the window lands exactly. */
++#define ESO_RING 32
++static struct { Time t; int x, y; } eso_ring[ESO_RING];
++static int eso_ring_n, eso_ring_i;
++static int eso_rx, eso_ry;                 /* last real pointer */
++static double eso_offx, eso_offy;          /* lead applied right now */
++static gint64 eso_last_us;
++static guint eso_settle_id;
++static Client *eso_c;
++static MoveResizeData *eso_pd;
++static gboolean eso_tiled;
++
++static void
++eso_predict_stop (void)
++{
++    if (eso_settle_id)
++    {
++        g_source_remove (eso_settle_id);
++        eso_settle_id = 0;
++    }
++    eso_ring_n = eso_ring_i = 0;
++    eso_offx = eso_offy = 0.0;
++    eso_c = NULL;
++    eso_pd = NULL;
++    eso_tiled = FALSE;
++}
++
++static void
++eso_place (Client *c, MoveResizeData *pd, int qx, int qy)
++{
++    XWindowChanges wc;
++
++    c->x = pd->ox + (qx - pd->mx);
++    c->y = pd->oy + (qy - pd->my);
++    clientConstrainPos (c, FALSE);
++    wc.x = c->x;
++    wc.y = c->y;
++    clientConfigure (c, &wc, CWX | CWY, NO_CFG_FLAG);
++    compositorEsoGlueMove (c->screen_info, qx, qy);
++}
++
++static gboolean
++eso_settle_tick (gpointer data)
++{
++    Client *c = eso_c;
++
++    if (!c || !eso_pd || !FLAG_TEST (c->xfwm_flags, XFWM_FLAG_MOVING_RESIZING) || eso_tiled)
++    {
++        eso_settle_id = 0;
++        return FALSE;
++    }
++    if (g_get_monotonic_time () - eso_last_us < 24000)
++    {
++        return TRUE;                               /* the hand is still moving: motion events steer */
++    }
++    eso_offx *= 0.35;
++    eso_offy *= 0.35;
++    if (fabs (eso_offx) < 1.0 && fabs (eso_offy) < 1.0)
++    {
++        eso_offx = eso_offy = 0.0;
++    }
++    eso_place (c, eso_pd, eso_rx + (int) lrint (eso_offx), eso_ry + (int) lrint (eso_offy));
++    if (eso_offx == 0.0 && eso_offy == 0.0)
++    {
++        eso_settle_id = 0;
++        return FALSE;
++    }
++    return TRUE;
++}
++
++/* the real pointer (x, y) at X time t -> the position to draw window and cursor at */
++static void
++eso_predict (ScreenInfo *screen_info, int x, int y, Time t, int *qx, int *qy)
++{
++    int lead_ms, k, j;
++    double vx = 0.0, vy = 0.0, sp, dx, dy, m;
++
++    eso_rx = *qx = x;
++    eso_ry = *qy = y;
++    eso_last_us = g_get_monotonic_time ();
++    if (!compositorEsoGlueActive (screen_info) || (lead_ms = compositorEsoPredictMs (screen_info)) <= 0 || eso_tiled)
++    {
++        eso_offx = eso_offy = 0.0;
++        return;
++    }
++    if (eso_ring_n > 0)
++    {
++        j = (eso_ring_i + ESO_RING - 1) % ESO_RING;
++        if ((long) (t - eso_ring[j].t) > 60 || (long) (t - eso_ring[j].t) < 0)
++        {
++            eso_ring_n = 0;                        /* a pause: start fresh */
++        }
++    }
++    eso_ring[eso_ring_i].t = t;
++    eso_ring[eso_ring_i].x = x;
++    eso_ring[eso_ring_i].y = y;
++    eso_ring_i = (eso_ring_i + 1) % ESO_RING;
++    if (eso_ring_n < ESO_RING)
++    {
++        eso_ring_n++;
++    }
++    /* the newest sample at least 24 ms old (or the oldest one if it is at least 8 ms old) */
++    for (k = 1; k < eso_ring_n; k++)
++    {
++        long dt;
++
++        j = (eso_ring_i + ESO_RING - 1 - k) % ESO_RING;
++        dt = (long) (t - eso_ring[j].t);
++        if (dt >= 24 || (k == eso_ring_n - 1 && dt >= 8))
++        {
++            vx = (x - eso_ring[j].x) * 1000.0 / dt;
++            vy = (y - eso_ring[j].y) * 1000.0 / dt;
++            break;
++        }
++    }
++    sp = sqrt (vx * vx + vy * vy);
++    if (sp < 200.0)
++    {
++        eso_offx = eso_offy = 0.0;                 /* slow and precise: exactly under the pointer */
++        return;
++    }
++    dx = vx * lead_ms / 1000.0;
++    dy = vy * lead_ms / 1000.0;
++    if (sp < 500.0)
++    {
++        dx *= (sp - 200.0) / 300.0;                /* fade in */
++        dy *= (sp - 200.0) / 300.0;
++    }
++    m = sqrt (dx * dx + dy * dy);
++    if (m > 48.0)
++    {
++        dx *= 48.0 / m;
++        dy *= 48.0 / m;
++    }
++    eso_offx = dx;
++    eso_offy = dy;
++    *qx = x + (int) lrint (dx);
++    *qy = y + (int) lrint (dy);
++    if (!eso_settle_id && (dx != 0.0 || dy != 0.0))
++    {
++        eso_settle_id = g_timeout_add_full (G_PRIORITY_HIGH, 16, eso_settle_tick, NULL, NULL);
++    }
++}
++
+ static eventFilterStatus
+ clientMoveEventFilter (XfwmEvent *event, gpointer data)
+ {
+@@ -997,6 +1146,11 @@
+     else if (event->meta.type == XFWM_EVENT_BUTTON && !event->button.pressed)
+     {
+         moving = FALSE;
++        if (eso_c == c && !eso_tiled && (eso_offx != 0.0 || eso_offy != 0.0) && !screen_info->params->box_move)
++        {
++            eso_offx = eso_offy = 0.0;
++            eso_place (c, passdata, event->button.x_root, event->button.y_root);
++        }
+         passdata->released = (passdata->use_keys ||
+                               passdata->button == AnyButton ||
+                               passdata->button == event->button.button);
+@@ -1056,18 +1210,28 @@
+             }
+         }
+ 
+-        c->x = passdata->ox + (event->motion.x_root - passdata->mx);
+-        c->y = passdata->oy + (event->motion.y_root - passdata->my);
++        {
++            int qx, qy;
++
++            eso_predict (screen_info, event->motion.x_root, event->motion.y_root, event->motion.time, &qx, &qy);
++            c->x = passdata->ox + (qx - passdata->mx);
++            c->y = passdata->oy + (qy - passdata->my);
++            passdata->eso_qx = qx;
++            passdata->eso_qy = qy;
++        }
+ 
+         clientSnapPosition (c, prev_x, prev_y);
+         if (clientMoveTile (c, &event->motion))
+         {
+             passdata->configure_flags = CFG_FORCE_REDRAW;
+             passdata->move_resized = TRUE;
++            eso_tiled = TRUE;                      /* tiled: no lead, no settling */
++            eso_offx = eso_offy = 0.0;
+         }
+         else
+         {
+             clientConstrainPos(c, FALSE);
++            eso_tiled = FALSE;
+         }
+ 
+ #ifdef SHOW_POSITION
+@@ -1104,6 +1268,8 @@
              clientConfigure (c, &wc, changes, passdata->configure_flags);
              /* Configure applied, clear the flags */
              passdata->configure_flags = NO_CFG_FLAG;
 +            /* ESO: the drawn cursor goes to the pointer position this window position came from */
-+            compositorEsoGlueMove (screen_info, event->motion.x_root, event->motion.y_root);
++            compositorEsoGlueMove (screen_info, passdata->eso_qx, passdata->eso_qy);
          }
      }
      else if ((event->meta.xevent->type == UnmapNotify) && (event->meta.window == c->window))
-@@ -1246,11 +1248,17 @@
+@@ -1202,8 +1368,10 @@
+ 
+     g1 = myScreenGrabKeyboard (screen_info, MOVERESIZE_KEYBOARD_EVENT_MASK,
+                                myDisplayGetCurrentTime (display_info));
++    /* ESO: a mouse drag keeps the normal arrow (like every desktop people know); keyboard moves show "move" */
+     g2 = myScreenGrabPointer (screen_info, FALSE, MOVERESIZE_POINTER_EVENT_MASK,
+-                              myDisplayGetCursorMove (display_info),
++                              (event && event->pressed) ? myDisplayGetCursorRoot (display_info)
++                                                        : myDisplayGetCursorMove (display_info),
+                               myDisplayGetCurrentTime (display_info));
+     if (!g1 || !g2)
+     {
+@@ -1246,11 +1414,23 @@
      FLAG_UNSET (c->xfwm_flags, XFWM_FLAG_SAVED_POS);
  
      FLAG_SET (c->xfwm_flags, XFWM_FLAG_MOVING_RESIZING);
@@ -233,16 +517,22 @@
 +    {
 +        compositorEsoGlueBegin (screen_info, event->x_root, event->y_root);
 +    }
++    eso_predict_stop ();
++    eso_c = c;
++    eso_pd = &passdata;
++    passdata.eso_qx = event ? event->x_root : 0;
++    passdata.eso_qy = event ? event->y_root : 0;
      TRACE ("entering move loop");
      eventFilterPush (display_info->xfilter, clientMoveEventFilter, &passdata);
      gtk_main ();
      eventFilterPop (display_info->xfilter);
      TRACE ("leaving move loop");
++    eso_predict_stop ();
 +    compositorEsoGlueEnd (screen_info);
      if (passdata.client_gone)
      {
          goto move_cleanup;
-@@ -1288,6 +1296,7 @@
+@@ -1288,6 +1468,7 @@
      }
  
  move_cleanup:
