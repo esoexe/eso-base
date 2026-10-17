@@ -5,12 +5,19 @@
 # screen back to the text console after 25 s.
 command -v plymouth >/dev/null 2>&1 || exit 0
 plymouth --ping 2>/dev/null || exit 0
+# quit, and if plymouthd does not answer within 5 s (a very slow PC or VM), end it: the desktop must get the screen
+quit() {
+    timeout 5 plymouth quit "$@" && return 0
+    pid=$(cat /run/plymouth/pid 2>/dev/null); [ -n "$pid" ] && kill "$pid" 2>/dev/null; sleep 1
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null
+    return 0
+}
 i=0
 while [ $i -lt 500 ]; do                       # 25 s in 0.05 s steps
     if [ -S /tmp/.X11-unix/X0 ] && { pgrep -x eso-shell >/dev/null 2>&1 || pgrep -f "bin/eso-shell( |$)" >/dev/null 2>&1; }; then
-        plymouth quit --retain-splash; exit 0
+        quit --retain-splash; exit 0
     fi
     sleep 0.05; i=$((i + 1))
 done
-if [ -S /tmp/.X11-unix/X0 ]; then plymouth quit --retain-splash; else plymouth quit; fi
+if [ -S /tmp/.X11-unix/X0 ]; then quit --retain-splash; else quit; fi
 exit 0
