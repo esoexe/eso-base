@@ -278,6 +278,38 @@ else echo "  (no built-in wallpaper found for the eso-rootpaint test)"; fi
 for u in bluetooth power-profiles-daemon spice-vdagentd eso-splash-quit; do
     [[ -e /usr/lib/systemd/system/$u.service ]] && { systemctl enable "$u.service" >/dev/null 2>&1 || echo "  WARNING: enable $u failed"; }
 done
+# CI demo only (kernel option eso.demorec): ESO films its own screen at 60 fps from inside the OS onto a spare
+# virtual disk (serial "esorec"), so the demo video shows every frame ESO draws - the VM's screen output (~30/s)
+# can't. Inert on every normal boot (ConditionKernelCommandLine).
+install -d /usr/local/libexec /usr/lib/systemd/user/default.target.wants
+cat > /usr/local/libexec/eso-demorec <<'REC'
+#!/bin/sh
+dev=""
+for i in $(seq 900); do
+    for b in /sys/block/vd*; do [ "$(cat "$b/serial" 2>/dev/null)" = esorec ] && dev=/dev/${b##*/}; done
+    eval "$(systemctl --user show-environment 2>/dev/null | grep -E '^(DISPLAY|XAUTHORITY)=' | sed 's/^/export /')"
+    [ -n "$dev" ] && [ -n "$DISPLAY" ] && [ -S "/tmp/.X11-unix/X${DISPLAY#:}" ] && break
+    sleep 0.2
+done
+[ -n "$dev" ] && [ -n "$DISPLAY" ] || exit 0
+sudo -n chmod 666 "$dev" 2>/dev/null
+ffmpeg -nostdin -loglevel error -f x11grab -draw_mouse 0 -framerate 60 -i "$DISPLAY" -c:v libx264 -preset ultrafast \
+    -tune zerolatency -crf 22 -g 120 -pix_fmt yuv420p -f mpegts - | dd of="$dev" bs=64k iflag=fullblock oflag=dsync status=none
+REC
+chmod 755 /usr/local/libexec/eso-demorec
+cat > /usr/lib/systemd/user/eso-demorec.service <<'UNIT'
+[Unit]
+Description=ESO CI demo: film the screen at 60 fps from inside the OS
+ConditionKernelCommandLine=eso.demorec
+
+[Service]
+ExecStart=/usr/local/libexec/eso-demorec
+Nice=2
+
+[Install]
+WantedBy=default.target
+UNIT
+ln -sf /usr/lib/systemd/user/eso-demorec.service /usr/lib/systemd/user/default.target.wants/eso-demorec.service
 # the live user's desktop starts straight from the boot animation (greetd only without /etc/eso/autologin)
 install -d /etc/systemd/system/graphical.target.wants
 ln -sf /usr/lib/systemd/system/eso-session@.service /etc/systemd/system/graphical.target.wants/eso-session@eso.service

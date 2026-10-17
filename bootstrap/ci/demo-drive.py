@@ -101,20 +101,53 @@ def alt_drag(path, secs):
     """move the window under the pointer with Alt+drag (xfwm4 'easy click'): any point inside the window works"""
     ev({"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "alt"}}})
     time.sleep(0.05); btn(True); time.sleep(0.08)
-    step = secs / max(1, len(path))
-    for (x, y) in path:
-        move(x, y, step)
+    glide(path, secs)
     time.sleep(0.05); btn(False); time.sleep(0.05)
     ev({"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "alt"}}})
 
 
+def glide(path, secs, hz=120):
+    """one continuous hand movement through all points of path (a smooth Catmull-Rom curve, constant speed along
+    it, easing only at the very start and end), at hz input updates/s on absolute deadlines (no drift, no pauses
+    at the points - the old per-point ease made the window stop and go)"""
+    pts = [tuple(cur)] + [tuple(p) for p in path]
+    if len(pts) < 2:
+        return
+    ext = [pts[0]] + pts + [pts[-1]]
+    curve = []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for k in range(16):
+            t = k / 16
+            curve.append(tuple(0.5 * ((2 * p1[j]) + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t * t
+                                      + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t * t * t) for j in (0, 1)))
+    curve.append(pts[-1])
+    acc = [0.0]
+    for a_, b_ in zip(curve, curve[1:]):
+        acc.append(acc[-1] + math.hypot(b_[0] - a_[0], b_[1] - a_[1]))
+    total = acc[-1] or 1.0
+    n = max(2, int(secs * hz)); t0 = time.monotonic(); j = 0
+    for i in range(1, n + 1):
+        u = i / n
+        u = u * u * (3 - 2 * u) if secs < 0.6 else (0.5 * u * u / 0.15 / 0.85 if u < 0.15 else
+             (1 - 0.5 * (1 - u) * (1 - u) / 0.15 / 0.85 if u > 0.85 else (u - 0.075) / 0.85))   # short ramps
+        d = u * total
+        while j < len(acc) - 2 and acc[j + 1] < d:
+            j += 1
+        seg = (acc[j + 1] - acc[j]) or 1.0; f = min(1.0, max(0.0, (d - acc[j]) / seg))
+        x = curve[j][0] + (curve[j + 1][0] - curve[j][0]) * f; y = curve[j][1] + (curve[j + 1][1] - curve[j][1]) * f
+        ev(*absxy(x, y))
+        dl = t0 + i * secs / n - time.monotonic()
+        if dl > 0:
+            time.sleep(dl)
+    cur[:] = [pts[-1][0], pts[-1][1]]
+
+
 def title_drag(grab, path, secs):
-    """drag a window by its title bar (grab = a point on the title bar)"""
+    """drag a window by its title bar (grab = a point on the title bar), like a hand: one continuous movement"""
     move(*grab, 0.5); time.sleep(0.1)
     btn(True); time.sleep(0.12)
-    step = secs / max(1, len(path))
-    for (x, y) in path:
-        move(x, y, step)
+    glide(path, secs)
     time.sleep(0.08); btn(False); time.sleep(0.1)
 
 
