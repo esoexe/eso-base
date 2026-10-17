@@ -9,7 +9,7 @@ Two things stock QEMU does that make a recording of a smooth guest look uneven:
 With ESO_REFRESH_HZ=N the refresh runs on fixed deadlines (next += 1/N s; a late tick never shifts the beat).
 With ESO_FRAME_FIFO=path (and ESO_FRAME_SIZE=WxH) every refresh writes the guest's framebuffer, exactly as it is at
 that tick, as one raw BGRX frame into the fifo (ffmpeg -f rawvideo -framerate N reads it): one video frame per guest
-display refresh, no second capture. A writer thread with an 8-frame ring keeps the main loop from ever blocking.
+display refresh, no second capture. A writer thread with a 32-frame ring keeps the main loop from ever blocking.
 Statistics (tick lateness, refresh cost, ring drops) go to stderr every 2 s.
 usage: qemu-eso-recorder.py path/to/ui/console.c
 """
@@ -25,7 +25,7 @@ static int64_t eso_step_ns, eso_next_ns, eso_stat_t0;
 static uint64_t eso_ticks, eso_late, eso_missed, eso_cost_sum, eso_cost_max, eso_late_max;
 static const char *eso_fifo;
 static int eso_w, eso_h;
-#define ESO_RING 8
+#define ESO_RING 32
 static uint8_t *eso_ring[ESO_RING];
 static unsigned eso_head, eso_tail;            /* head: next to fill (main), tail: next to write (writer) */
 static uint64_t eso_frames, eso_drops;
@@ -215,3 +215,13 @@ s = s.replace(old_upd, new_upd, 1)
 
 open(p, "w").write(s)
 print("patched", p)
+
+# the guest's monitor defaults to 60 Hz (QEMU's EDID default is 75 Hz unless a UI reports its screen's rate; the
+# recorder has no UI window) - VirtualBox, VMware and nearly every real screen are 60 Hz
+import os
+e = os.path.join(os.path.dirname(os.path.abspath(p)), "..", "hw", "display", "edid-generate.c")
+t = open(e).read()
+old_e = "info->refresh_rate ? info->refresh_rate : 75000"
+assert t.count(old_e) == 1, "edid default not found"
+open(e, "w").write(t.replace(old_e, "info->refresh_rate ? info->refresh_rate : 60000"))
+print("patched", e)

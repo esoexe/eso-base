@@ -97,15 +97,20 @@ jobs:
           if [ "${{ github.event.inputs.gpu }}" = vga ]; then GPU="VGA,edid=on,xres=1920,yres=1080,refresh_rate=60000"
           else GPU="virtio-vga,edid=on,xres=1920,yres=1080"; fi
           echo "guest display card: $GPU"
-          $QEMU $ACC -m 4096 -smp 4 -vga none -device $GPU \
+          # recorder: QEMU draws no window at all (frames go straight to the encoder; a local VNC endpoint nobody
+          # connects to keeps the refresh timer alive), and the guest gets 2 CPUs, so the runner's 4 cores are not
+          # fought over by guest vCPUs + QEMU's display loop + a software-drawn host window + the encoder
+          if [ $REC = 1 ]; then VIEW="-display none -vnc 127.0.0.1:9"; SMP=2
+          else VIEW="-display gtk,zoom-to-fit=off,show-menubar=off,show-tabs=off,gl=off -full-screen"; SMP=4; fi
+          $QEMU $ACC -m 4096 -smp $SMP -vga none -device $GPU \
             -device qemu-xhci -device usb-tablet \
             -cdrom eso-os-x86_64.iso -kernel vmlinuz -initrd initrd.img \
             -append "eso.live eso.label=ESO_OS quiet loglevel=3 splash vt.global_cursor_default=0 udev.log_level=3 console=ttyS0,115200 console=tty0" \
-            -display gtk,zoom-to-fit=off,show-menubar=off,show-tabs=off,gl=off -full-screen \
+            $VIEW \
             -serial file:boot.log -qmp unix:qmp.sock,server,nowait -no-reboot 2> qemu.log & q=$!
           if [ $REC = 1 ]; then
             # one video frame per guest display refresh, taken by QEMU itself on a steady 60 Hz beat
-            ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgr0 -video_size 1920x1080 -framerate 60 -thread_queue_size 64 \
+            nice -n 8 ffmpeg -loglevel error -y -f rawvideo -pix_fmt bgr0 -video_size 1920x1080 -framerate 60 -thread_queue_size 64 \
               -i frames.fifo -c:v libx264 -preset ultrafast -crf 16 -threads 2 demo-raw.mkv & ff=$!
           else
             sleep 0.5
