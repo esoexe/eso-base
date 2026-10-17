@@ -88,10 +88,10 @@ def key(*names, hold=0.06):
 
 def type_text(s, gap=0.07):
     names = {" ": "spc", "\n": "ret", "-": "minus", ".": "dot", "/": "slash", ";": "semicolon", ",": "comma",
-             "=": "equal", "'": "apostrophe", "[": "bracket_left", "]": "bracket_right"}
+             "=": "equal", "'": "apostrophe", "[": "bracket_left", "]": "bracket_right", "\\": "backslash", "`": "grave_accent"}
     shifted = {"$": "4", "_": "minus", ":": "semicolon", "|": "backslash", ">": "dot", "(": "9", ")": "0",
                "*": "8", "+": "equal", '"': "apostrophe", "<": "comma", "{": "bracket_left", "}": "bracket_right",
-               "!": "1", "&": "7", "#": "3", "%": "5"}
+               "!": "1", "&": "7", "#": "3", "%": "5", "~": "grave_accent", "@": "2", "^": "6", "?": "slash"}
     for ch in s:
         if ch.isupper():
             key("shift", ch.lower())
