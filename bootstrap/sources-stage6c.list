@@ -11,3 +11,4 @@ uthash 2.3.0 https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.
 picom 12.5 https://github.com/yshui/picom/archive/refs/tags/v12.5.tar.gz
 xf86videofbdev 0.5.1 https://xorg.freedesktop.org/archive/individual/driver/xf86-video-fbdev-0.5.1.tar.xz
 xfwm4 4.20.0 https://archive.xfce.org/src/xfce/xfwm4/4.20/xfwm4-4.20.0.tar.bz2
+xorgserver 21.1.25 https://xorg.freedesktop.org/archive/individual/xserver/xorg-server-21.1.25.tar.xz

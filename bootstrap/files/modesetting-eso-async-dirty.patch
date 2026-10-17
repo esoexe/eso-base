@@ -1,0 +1,159 @@
+--- a/hw/xfree86/drivers/modesetting/driver.c
++++ b/hw/xfree86/drivers/modesetting/driver.c
+@@ -547,6 +547,142 @@
+     }
+ }
+ 
++/*
++ * ESO OS: asynchronous kernel dirty updates.
++ *
++ * Since Linux 6.19 the virtual GPUs (QEMU bochs/stdvga, virtio-gpu, QXL, Cirrus, Hyper-V, VKMS, ...) simulate vblank
++ * interrupts with a timer, and drm_atomic_helper_dirtyfb() commits synchronously: every DRM_IOCTL_MODE_DIRTYFB now
++ * sleeps until the next (simulated) vblank. modesetting calls it from the BlockHandler after every screen update, so
++ * the whole X server - input, every client, the window manager - stood still for most of each frame; with mouse
++ * input arriving faster than the refresh rate it never caught up: a dragged window froze until the button was
++ * released, then jumped. Here the main thread only queues the damaged rectangles and returns at once; a helper
++ * thread hands them to the kernel (merging what arrives while it waits for the vblank). The screen still updates at
++ * the display rate, and X never waits for it. ESO_SYNC_DIRTY=1 in the server's environment restores the old path.
++ */
++#include <pthread.h>
++#include <signal.h>
++
++#define ESO_DIRTY_SLOTS 4
++#define ESO_DIRTY_CLIPS 128
++
++struct eso_dirty_slot {
++    uint32_t fb_id;
++    unsigned n;
++    drmModeClip clips[ESO_DIRTY_CLIPS];
++};
++
++static struct {
++    pthread_mutex_t lock;
++    pthread_cond_t cond;
++    int state;                       /* 0 = not started, 1 = running, -1 = unavailable (synchronous) */
++    int fd;
++    struct eso_dirty_slot slot[ESO_DIRTY_SLOTS];
++} eso_dirty = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, -1 };
++
++static void
++eso_dirty_send(int fd, uint32_t fb_id, drmModeClip *clip, unsigned n)
++{
++    unsigned i;
++
++    if (drmModeDirtyFB(fd, fb_id, clip, n) == -EINVAL) {
++        for (i = 0; i < n; i++)      /* too much at once for the driver: one at a time */
++            if (drmModeDirtyFB(fd, fb_id, &clip[i], 1) < 0)
++                break;
++    }
++}
++
++static void *
++eso_dirty_thread(void *arg)
++{
++    static struct eso_dirty_slot work[ESO_DIRTY_SLOTS];
++    int i, fd, have;
++
++    (void) arg;
++    pthread_mutex_lock(&eso_dirty.lock);
++    for (;;) {
++        have = 0;
++        for (i = 0; i < ESO_DIRTY_SLOTS; i++)
++            have |= eso_dirty.slot[i].n != 0;
++        if (!have) {
++            pthread_cond_wait(&eso_dirty.cond, &eso_dirty.lock);
++            continue;
++        }
++        fd = eso_dirty.fd;
++        for (i = 0; i < ESO_DIRTY_SLOTS; i++) {
++            work[i] = eso_dirty.slot[i];
++            eso_dirty.slot[i].n = 0;
++        }
++        pthread_mutex_unlock(&eso_dirty.lock);
++        for (i = 0; i < ESO_DIRTY_SLOTS; i++)
++            if (work[i].n)
++                eso_dirty_send(fd, work[i].fb_id, work[i].clips, work[i].n);
++        pthread_mutex_lock(&eso_dirty.lock);
++    }
++    return NULL;
++}
++
++/* queue the clips for fb_id; FALSE = could not queue, the caller sends them itself */
++static Bool
++eso_dirty_queue(int fd, uint32_t fb_id, const drmModeClip *clip, unsigned n)
++{
++    struct eso_dirty_slot *s = NULL;
++    unsigned i;
++
++    pthread_mutex_lock(&eso_dirty.lock);
++    if (eso_dirty.state == 0) {
++        const char *e = getenv("ESO_SYNC_DIRTY");
++        pthread_t th;
++        sigset_t all, old;
++
++        eso_dirty.state = -1;
++        if (!(e && *e && *e != '0')) {
++            sigfillset(&all);        /* the helper never takes the server's signals */
++            pthread_sigmask(SIG_BLOCK, &all, &old);
++            if (pthread_create(&th, NULL, eso_dirty_thread, NULL) == 0) {
++                pthread_detach(th);
++                eso_dirty.state = 1;
++            }
++            pthread_sigmask(SIG_SETMASK, &old, NULL);
++        }
++    }
++    if (eso_dirty.state != 1) {
++        pthread_mutex_unlock(&eso_dirty.lock);
++        return FALSE;
++    }
++    eso_dirty.fd = fd;
++    for (i = 0; i < ESO_DIRTY_SLOTS && !s; i++)
++        if (eso_dirty.slot[i].n && eso_dirty.slot[i].fb_id == fb_id)
++            s = &eso_dirty.slot[i];
++    for (i = 0; i < ESO_DIRTY_SLOTS && !s; i++)
++        if (!eso_dirty.slot[i].n)
++            s = &eso_dirty.slot[i];
++    if (!s) {
++        pthread_mutex_unlock(&eso_dirty.lock);
++        return FALSE;
++    }
++    s->fb_id = fb_id;
++    if (s->n + n <= ESO_DIRTY_CLIPS) {
++        memcpy(&s->clips[s->n], clip, n * sizeof(*clip));
++        s->n += n;
++    } else {                         /* more than fits: one rectangle around everything */
++        drmModeClip b = s->n ? s->clips[0] : clip[0];
++
++        for (i = 0; i < s->n; i++) {
++            b.x1 = min(b.x1, s->clips[i].x1); b.y1 = min(b.y1, s->clips[i].y1);
++            b.x2 = max(b.x2, s->clips[i].x2); b.y2 = max(b.y2, s->clips[i].y2);
++        }
++        for (i = 0; i < n; i++) {
++            b.x1 = min(b.x1, clip[i].x1); b.y1 = min(b.y1, clip[i].y1);
++            b.x2 = max(b.x2, clip[i].x2); b.y2 = max(b.y2, clip[i].y2);
++        }
++        s->clips[0] = b;
++        s->n = 1;
++    }
++    pthread_cond_signal(&eso_dirty.cond);
++    pthread_mutex_unlock(&eso_dirty.lock);
++    return TRUE;
++}
++
+ static int
+ dispatch_dirty_region(ScrnInfoPtr scrn, xf86CrtcPtr crtc,
+ 		      PixmapPtr pixmap, DamagePtr damage, int fb_id)
+@@ -568,6 +704,13 @@
+         for (i = 0; i < num_cliprects; i++, rect++)
+ 	    rotate_clip(pixmap, rect, &clip[i], crtc->rotation);
+ 
++        /* ESO: queued for the helper thread; X never waits for the (simulated) vblank */
++        if (eso_dirty_queue(ms->fd, fb_id, clip, num_cliprects)) {
++            free(clip);
++            DamageEmpty(damage);
++            return 0;
++        }
++
+         /* TODO query connector property to see if this is needed */
+         ret = drmModeDirtyFB(ms->fd, fb_id, clip, num_cliprects);
+ 

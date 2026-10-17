@@ -169,6 +169,28 @@ grep -qa ESO_XFWM_PAINT_US /usr/bin/xfwm4 || { echo "FAILED: ESO xfwm4 patch mis
 install -d /usr/share/eso-native; install -m755 src/xfwm4 /usr/share/eso-native/xfwm4      # exported for the deb
 echo "  xfwm4 $V_xfwm4 + ESO mailbox patch installed"; done_ xfwm4
 
+# ESO 4.0: Xorg's modesetting driver with ASYNCHRONOUS kernel dirty updates. Since Linux 6.19 the virtual GPUs (QEMU
+# bochs/stdvga, virtio-gpu, QXL, Cirrus, Hyper-V, ...) simulate vblank with a timer and every DIRTYFB ioctl sleeps until
+# the next one; modesetting called it after every screen update, so the X server stood still most of each frame and a
+# dragged window froze until the button was released, then jumped (measured in the VM: Xorg in
+# drm_atomic_helper_wait_for_vblanks for the whole drag, every client blocked). A helper thread now does that wait.
+# Built from the same xorg-server source and options as stage 5c (same ABI); only the driver module is replaced.
+step "Xorg modesetting driver $V_xorgserver + ESO async dirty updates"
+unpack xorgserver "xorg-server-$V_xorgserver.tar.xz"
+patch -p1 < /sources/files/modesetting-eso-async-dirty.patch
+quiet meson setup build --prefix=/usr --buildtype=release -Dwrap_mode=nodownload \
+    -Dxorg=true -Dxvfb=true -Dxephyr=false -Dxnest=false -Dxwin=false -Dxquartz=false \
+    -Dglamor=true -Dglx=true -Ddri3=true -Dsecure-rpc=false -Dsha1=libcrypto -Dudev=true -Dudev_kms=true \
+    -Dsystemd_logind=true -Dsuid_wrapper=true -Dhal=false -Dxselinux=false -Dint10=false -Dlinux_apm=false \
+    -Dxkb_output_dir=/var/lib/xkb -Dlog_dir=/var/log -Ddocs=false -Ddevel-docs=false -Ddocs-pdf=false \
+    -Dvendor_name="ESO OS" -Dvendor_name_short=ESO -Dvendor_web=https://esoos.dpdns.org
+quiet ninja -C build hw/xfree86/drivers/modesetting/modesetting_drv.so
+install -m755 build/hw/xfree86/drivers/modesetting/modesetting_drv.so /usr/lib/xorg/modules/drivers/modesetting_drv.so
+grep -qa ESO_SYNC_DIRTY /usr/lib/xorg/modules/drivers/modesetting_drv.so || { echo "FAILED: ESO modesetting patch missing"; exit 1; }
+install -d /usr/share/eso-native
+install -m755 build/hw/xfree86/drivers/modesetting/modesetting_drv.so /usr/share/eso-native/modesetting_drv.so  # for the deb
+echo "  modesetting $V_xorgserver + ESO async dirty updates installed"; done_ xorgserver
+
 # ───────────────────────────── the ESO desktop ─────────────────────────────
 step "ESO desktop $V_esodesktop (eso-desktop package, installed by ESO's own installer: no dpkg)"
 python3 -c "import lzma, tarfile, hashlib, ssl" || { echo "FAILED: python3 lacks lzma/ssl (needed by ESO updates)"; exit 1; }

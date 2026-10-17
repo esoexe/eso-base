@@ -73,3 +73,10 @@ jobs:
             eso-base-stage6c-x86_64.tar.zst.sha256
             sources.lock
           retention-days: 30
+      - name: ESO native binaries (for the eso-desktop deb)
+        run: mkdir -p eso-native && sudo cp -a /mnt/eso/usr/share/eso-native/. eso-native/ && sudo chown -R "$USER" eso-native && ls -l eso-native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eso-native-x86_64
+          path: eso-native
+          retention-days: 30
