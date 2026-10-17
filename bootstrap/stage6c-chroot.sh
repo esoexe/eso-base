@@ -146,6 +146,22 @@ quiet ninja -C build; quiet ninja -C build install
 rm -f /etc/xdg/autostart/picom.desktop                         # eso-perf starts it, only where it belongs
 ldconfig; picom --version; done_ picom
 
+# ───────────────────────────── window manager: ESO's low-latency xfwm4 ─────────────────────────────
+# Stock xfwm4 waits for each X Present frame to complete before painting the next one, so a dragged window trails the
+# cursor by 2-3 frames, and after 100 waits it drops to a 500 ms repaint timer (the "jumps" in VMs). ESO's patch:
+# mailbox Present (a newer frame replaces the queued one at the same vblank), paced repaints, no 500 ms stall.
+# Measured (tests/dragbench/latency.py, 60 Hz, 1500 px/s): trail 38 -> 26 px tear-free, 12 px with vsync off (VMs).
+step "xfwm4 $V_xfwm4 + ESO mailbox patch"
+unpack xfwm4 "xfwm4-$V_xfwm4.tar.bz2"
+patch -p1 < /sources/files/xfwm4-eso-mailbox.patch
+quiet ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --disable-debug --enable-epoxy \
+    --enable-startup-notification --enable-xsync --enable-render --enable-randr --enable-xpresent --enable-compositor --enable-xi2
+quiet make -j"$(nproc)"
+install -m755 src/xfwm4 /usr/bin/xfwm4
+grep -qa ESO_XFWM_PAINT_US /usr/bin/xfwm4 || { echo "FAILED: ESO xfwm4 patch missing"; exit 1; }
+install -d /usr/share/eso-native; install -m755 src/xfwm4 /usr/share/eso-native/xfwm4      # exported for the deb
+echo "  xfwm4 $V_xfwm4 + ESO mailbox patch installed"; done_ xfwm4
+
 # ───────────────────────────── the ESO desktop ─────────────────────────────
 step "ESO desktop $V_esodesktop (eso-desktop package, installed by ESO's own installer: no dpkg)"
 python3 -c "import lzma, tarfile, hashlib, ssl" || { echo "FAILED: python3 lacks lzma/ssl (needed by ESO updates)"; exit 1; }

@@ -19,7 +19,7 @@ INTRO=0
 if [ "${ESO_LOCK_AT_START:-0}" != 1 ] && command -v eso-intro >/dev/null 2>&1 && command -v eso-rootpaint >/dev/null 2>&1 &&
    ! grep -qs '^ESO_INTRO=["'"'"']*0' "$HOME/.config/eso/eso.conf"; then
     for STILL in /usr/share/eso/src/assets/intro/intro-still-1080p.jpg "$HOME/.local/share/eso/src/assets/intro/intro-still-1080p.jpg"; do
-        [ -r "$STILL" ] && { eso-rootpaint --zoom "$STILL" >/dev/null 2>&1 && INTRO=1; break; }
+        [ -r "$STILL" ] && { INTRO=1; break; }        # painted below, once the resolution is final
     done
 fi
 screen_size() { xrandr --current 2>/dev/null | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p' | head -n 1; }
@@ -44,9 +44,10 @@ export MOZ_USE_XINPUT2=1           # smooth scrolling + low-latency input in Fir
 xset r rate 220 40 2>/dev/null
 xset s off 2>/dev/null
 # 100 % scale + best resolution for the attached monitor BEFORE anything draws
-size0=$(screen_size)
 command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1 && export ESO_DISPLAY_DONE=1   # autostart: no 2nd run
-[ "$INTRO" = 1 ] && [ "$(screen_size)" != "$size0" ] && eso-rootpaint --zoom "$STILL" >/dev/null 2>&1
+# the boot animation stays on screen until the shell runs, so the still is painted in the background (~0.5-1 s
+# saved before the window manager starts on slow PCs) and only once, at the final resolution
+[ "$INTRO" = 1 ] && eso-rootpaint --zoom "$STILL" >/dev/null 2>&1 &
 # The ESO intro ("Ascension") goes on from the boot animation's exact picture (same halo, rays, spark) and dissolves
 # into the desktop once it is ready, so boot -> desktop is one continuous film with nothing popping up. It must
 # cover the screen BEFORE the wallpaper is painted, otherwise the bare wallpaper flashes in between.
@@ -80,8 +81,9 @@ if command -v eso-supertap >/dev/null 2>&1; then eso-supertap >/dev/null 2>&1 & 
 elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|Escape;Super_R=Control_L|Escape' >/dev/null 2>&1; fi
 # 3.13.14: autostart (and with it the desktop) right away; eso-autostart applies the gsettings theme itself in the
 # background (GTK on X11 reads settings.ini/XSETTINGS, not gsettings): it cost the first boot seconds before the shell
-# The shell (taskbar, icons, first-run setup) maps only once the intro covers the screen (at most 3 s).
-( i=0; while [ -n "${INTRO_PID:-}" ] && [ $i -lt 60 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 "$INTRO_PID" 2>/dev/null; do
+# The shell (taskbar, icons, first-run setup) maps once the intro covers the screen (at most 1.2 s: until then the
+# screen shows the same still picture anyway).
+( i=0; while [ -n "${INTRO_PID:-}" ] && [ $i -lt 24 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 "$INTRO_PID" 2>/dev/null; do
       sleep 0.05; i=$((i + 1)); done
   exec "$HOME/.local/bin/eso-autostart" ) &
 # xfwm4's built-in compositor: eso-perf writes its settings (on with the right vsync, or off when picom draws the
@@ -90,10 +92,18 @@ elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|E
 command -v eso-perf >/dev/null 2>&1 && eso-perf wm-prepare >/dev/null 2>&1
 # The session lives as long as the window manager.  If xfwm4 ever crashes it comes straight back
 # (windows keep running); eso-logout writes $RUN/logout first, so a real "Sign out" ends the loop.
+# ESO 3.13.23: ESO's own xfwm4 build (mailbox Present: the newest frame replaces the queued one at each vblank, paced
+# repaints, no 500 ms stall) when the system one is stock; the binary is called xfwm4 so every check still finds it.
+XFWM=xfwm4
+N=/usr/share/eso/src/native/xfwm4
+if [ -x "$N" ] && ! grep -qa ESO_XFWM_PAINT_US /usr/bin/xfwm4 2>/dev/null; then
+    # only where all its libraries exist (ESO Base); on other distributions the system xfwm4 runs
+    if ldd "$N" >/dev/null 2>&1 && ! ldd "$N" 2>&1 | grep -q "not found"; then XFWM=$N; fi
+fi
 fails=0
 while :; do
     t0=$(date +%s)
-    xfwm4 --replace --compositor=on --sm-client-disable >/dev/null 2>&1
+    "$XFWM" --replace --compositor=on --sm-client-disable >/dev/null 2>&1
     [ -e "$RUN/logout" ] && break
     if [ $(( $(date +%s) - t0 )) -lt 5 ]; then fails=$((fails + 1)); else fails=0; fi
     if [ "$fails" -ge 5 ]; then exec i3 -c "$HOME/.config/i3/config"; fi   # broken xfwm4 → still a desktop

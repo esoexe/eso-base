@@ -1,0 +1,85 @@
+--- a/src/compositor.c	2026-10-17 10:36:17.372522785 +0000
++++ b/src/compositor.c	2026-10-17 10:36:24.592522785 +0000
+@@ -115,7 +115,7 @@
+ #endif /* TIMEOUT_REPAINT_MS */
+ 
+ #ifndef TIMEOUT_THROTTLED_REPAINT_MS
+-#define TIMEOUT_THROTTLED_REPAINT_MS   500
++#define TIMEOUT_THROTTLED_REPAINT_MS   16  /* ESO: was 500 ms = visible freezes when Present completions are slow (VMs) */
+ #endif /* TIMEOUT_THROTTLED_REPAINT_MS */
+ 
+ #ifndef MONITOR_ROOT_PIXMAP
+@@ -1913,6 +1913,32 @@
+ }
+ #endif /* HAVE_EPOXY */
+ 
++static gboolean
++eso_mailbox (void)
++{
++    static int v = -1;
++    if (v < 0)
++    {
++        const gchar *e = g_getenv ("ESO_XFWM_MAILBOX");
++        v = (e && e[0] == '0') ? 0 : 1;
++    }
++    return v;
++}
++
++static gint64
++eso_paint_us (void)
++{
++    static gint64 v = -1;
++    if (v < 0)
++    {
++        const gchar *e = g_getenv ("ESO_XFWM_PAINT_US");
++        v = e ? g_ascii_strtoll (e, NULL, 10) : 6000;
++        if (v < 0 || v > 50000)
++            v = 6000;
++    }
++    return v;
++}
++
+ #ifdef HAVE_PRESENT_EXTENSION
+ static void
+ present_error (ScreenInfo *screen_info, int error_code)
+@@ -1939,9 +1965,13 @@
+ 
+     display_info = screen_info->display_info;
+     myDisplayErrorTrapPush (display_info);
++    /* ESO mailbox: while an earlier frame is still queued for the next vblank, present the whole
++     * buffer without an update region; the X server then drops the queued frame and shows this
++     * newer one at the same vblank (present_scmd.c: "don't bother doing the previous one").
++     * The buffers stay complete thanks to the prevDamage union in repair_screen(). */
+     XPresentPixmap (display_info->dpy, screen_info->output,
+                     screen_info->rootPixmap[buffer],
+-                    present_serial++, None, region, 0, 0, None, None, None,
++                    present_serial++, None, screen_info->present_pending ? None : region, 0, 0, None, None, None,
+                     PresentOptionNone, 0, 1, 0, NULL, 0);
+     result = myDisplayErrorTrapPop (display_info);
+ 
+@@ -2705,12 +2735,24 @@
+      * We do not paint the screen because we are waiting for
+      * a pending present notification, do not cancel the callback yet...
+      */
+-     if (screen_info->use_present && screen_info->present_pending)
++     if (screen_info->use_present && screen_info->present_pending && !eso_mailbox ())
+      {
+          DBG ("Waiting for Present");
+          return (screen_info->allDamage != None);
+      }
+ #endif /* HAVE_PRESENT_EXTENSION */
++    /* ESO pacing: at most one paint per ESO_XFWM_PAINT_US (default 6000 us, ~2 paints per 60 Hz
++     * frame) so fast mice cannot make the compositor burn the CPU; the newest state always wins. */
++    if (screen_info->allDamage != None)
++    {
++        static gint64 last_paint = 0;
++        gint64 now = g_get_monotonic_time ();
++        if (now - last_paint < eso_paint_us ())
++        {
++            return TRUE;
++        }
++        last_paint = now;
++    }
+ 
+ #ifdef HAVE_EPOXY
+     /*
