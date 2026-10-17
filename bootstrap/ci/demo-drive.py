@@ -26,7 +26,24 @@ class QMP:
         with self.lk:
             return self._cmd(name, **args)
 
+    pending = 0
+
+    def send_nowait(self, name, **args):
+        """fire an input event without waiting for QEMU's answer (the hand's timing never waits on a round trip);
+        the answers are collected before the next normal command"""
+        with self.lk:
+            self.f.write(json.dumps({"execute": name, "arguments": args}) + "\n")
+            self.f.flush()
+            self.pending += 1
+
+    def _drain(self):
+        while self.pending > 0:
+            r = json.loads(self.f.readline())
+            if "return" in r or "error" in r:
+                self.pending -= 1
+
     def _cmd(self, name, **args):
+        self._drain()
         self.f.write(json.dumps({"execute": name, "arguments": args} if args else {"execute": name}) + "\n")
         self.f.flush()
         while True:
@@ -47,6 +64,13 @@ def log(m):
 
 def ev(*events):
     q.cmd("input-send-event", events=list(events))
+
+
+def evq(*events):
+    q.send_nowait("input-send-event", events=list(events))
+
+
+HAND = []                                    # timestamps of the last glide's pointer updates (input regularity)
 
 
 def absxy(x, y):
@@ -145,11 +169,22 @@ def glide(path, secs, hz=None):
             j += 1
         seg = (acc[j + 1] - acc[j]) or 1.0; f = min(1.0, max(0.0, (d - acc[j]) / seg))
         x = curve[j][0] + (curve[j + 1][0] - curve[j][0]) * f; y = curve[j][1] + (curve[j + 1][1] - curve[j][1]) * f
-        ev(*absxy(x, y))
+        evq(*absxy(x, y)); HAND.append(time.monotonic())
         dl = t0 + i * secs / n - time.monotonic()
-        if dl > 0:
-            time.sleep(dl)
+        if dl > 0.0015:
+            time.sleep(dl - 0.001)
+        while time.monotonic() < t0 + i * secs / n:      # the last millisecond: exact
+            pass
     cur[:] = [pts[-1][0], pts[-1][1]]
+    if len(HAND) > 10:
+        g = sorted((b - a) * 1000 for a, b in zip(HAND, HAND[1:]))
+        per = {}
+        for t in HAND:
+            k = int((t - HAND[0]) * 60); per[k] = per.get(k, 0) + 1
+        c = sorted(per.values())
+        log(f"hand: {len(HAND)} updates in {HAND[-1] - HAND[0]:.2f} s ({len(HAND) / (HAND[-1] - HAND[0]):.0f}/s), "
+            f"gap median {g[len(g) // 2]:.2f} ms max {g[-1]:.1f} ms; updates per 1/60 s min {c[0]} median {c[len(c) // 2]} max {c[-1]}")
+    HAND.clear()
 
 
 def title_drag(grab, path, secs):
@@ -245,9 +280,14 @@ def drag_window(grab, path, secs, name):
     def middump():                                       # WHILE the pointer still moves: does the screen follow?
         time.sleep(0.72 + secs * 0.25); mid.append(ppm(name + "-m1"))
         time.sleep(min(0.4, secs * 0.25)); mid.append(ppm(name + "-m2"))
-    th = __import__("threading").Thread(target=middump, daemon=True); th.start()
+    # mid-drag screendumps block QEMU's main loop and the input socket: they put two hitches into every filmed
+    # drag. The frame-accurate recorder's film shows whether the screen follows, so they only run without it.
+    th = __import__("threading").Thread(target=middump, daemon=True)
+    if not os.environ.get("ESO_FRAME_FIFO"):
+        th.start()
     title_drag(grab, path, secs)
-    th.join(5)
+    if th.is_alive():
+        th.join(5)
     c = changed(before, ppm(name + "-b"))
     if c > 0.02:
         m = changed(mid[0], mid[1]) if len(mid) == 2 else -1
@@ -511,19 +551,24 @@ if os.environ.get("DEMO_PHASE") == "cadence":
         g = find_title((900, 254))
         ys = [g[1] + 120, g[1] + 330, g[1] + 520]
         stop = threading.Event(); ts = []
-        th = threading.Thread(target=host_counter, args=(stop, ys, ts), daemon=True); th.start()
+        th = threading.Thread(target=host_counter, args=(stop, ys, ts), daemon=True)
+        if not os.environ.get("ESO_FRAME_FIFO"):          # the recorder films QEMU directly: nothing to count here
+            th.start()
         move(*g, 0.4); time.sleep(0.3)
         btn(True); time.sleep(0.15); t0 = time.time() + 0.3
         path = [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -60), (-100, 0)]
         glide([(g[0] + dx, g[1] + dy) for (dx, dy) in path], 4.0)
         t1 = time.time() - 0.1
-        time.sleep(0.08); btn(False); time.sleep(0.5); stop.set(); th.join(2)
+        time.sleep(0.08); btn(False); time.sleep(0.5); stop.set()
+        if th.is_alive():
+            th.join(2)
         cadence_report(tag, ts, t0, t1)
         # idle baseline: how often the rows change when nothing moves (should be ~0)
-        stop = threading.Event(); ts2 = []
-        th = threading.Thread(target=host_counter, args=(stop, ys, ts2), daemon=True); th.start()
-        time.sleep(1.5); stop.set(); th.join(2)
-        log(f"cadence {tag} idle: {len(ts2)} changes in 1.5 s")
+        if not os.environ.get("ESO_FRAME_FIFO"):
+            stop = threading.Event(); ts2 = []
+            th = threading.Thread(target=host_counter, args=(stop, ys, ts2), daemon=True); th.start()
+            time.sleep(1.5); stop.set(); th.join(2)
+            log(f"cadence {tag} idle: {len(ts2)} changes in 1.5 s")
     sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "dragdiag":
     import threading
