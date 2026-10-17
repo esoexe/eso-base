@@ -537,10 +537,16 @@ def cadence_report(tag, ts, t0, t1):
         f.write(line + "\n")
 
 
-if os.environ.get("DEMO_PHASE") == "cadence":
+if os.environ.get("DEMO_PHASE", "").startswith("cadence"):
     import threading, signal
     log("cadence test; waiting for the desktop")
     wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    comp = os.environ["DEMO_PHASE"].partition("-")[2]          # cadence-xpresent / cadence-glx: xfwm4's compositor
+    if comp:
+        key("meta_l", "ret"); wait(3.0)
+        type_text(f"xfconf-query -c xfwm4 -p /general/vblank_mode -n -t string -s {comp}; "
+                  "xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true; sleep 1; exit\n", gap=0.03)
+        wait(4.0); log(f"xfwm4 compositor switched on ({comp})"); shot("cadence-comp")
     for tag in ("A-recording", "B-no-recorder"):
         if tag.startswith("B"):
             try:
