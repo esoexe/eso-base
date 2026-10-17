@@ -203,6 +203,8 @@ if os.environ.get("DEMO_PHASE") == "diag":
     shot("89-matrix-fresh")                              # untouched new terminal: its first line must be the shell's
     type_text("clear; cat $XDG_RUNTIME_DIR/eso/intro.log; grep -a 'eso-shell:' $XDG_RUNTIME_DIR/eso/autostart.log; "
               "ps -o etimes=,comm= -C xfwm4,picom,eso-shell; cut -d' ' -f1 /proc/uptime; "
+              "echo compositor $(eso-perf compositor) vblank $(xfconf-query -c xfwm4 -p /general/vblank_mode) "
+              "eso-xfwm4 $(grep -ca ESO_XFWM_PAINT_US /proc/$(pgrep -n -x xfwm4)/exe); "
               "xfconf-query -c xfwm4 -p /general/use_compositing; grep -ah 'compos\\|picom' $XDG_RUNTIME_DIR/eso/*.log | tail -4; "
               "python3 -c 'import gi;from gi.repository import Gdk;print(\"composited now\",Gdk.Screen.get_default().is_composited())'\n")
     time.sleep(4)
@@ -311,6 +313,10 @@ key("meta_l", "i"); wait(3.5); shot("06-settings")
 drag_window(SETTINGS_T, [(SETTINGS_T[0] - 350, SETTINGS_T[1] + 180), (SETTINGS_T[0] + 50, SETTINGS_T[1] + 260),
                          (SETTINGS_T[0] + 380, SETTINGS_T[1] + 90)], 3.5, "settings")
 shot("07-overlap")
+# 3.13.23: a fast flick (~2000 px/s figure-of-eight over Files): the window must stay glued to the pointer
+FL = (SETTINGS_T[0] + 380, SETTINGS_T[1] + 90)
+title_drag(FL, figure8(FL[0] - 420, FL[1] + 260, 420, 170, 32), 1.8)
+shot("07b-after-flick")
 key("meta_l", "up"); wait(1.6); shot("08-maximized")
 key("meta_l", "up"); wait(1.4)
 
