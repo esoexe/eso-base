@@ -461,6 +461,46 @@ for tag in ('A', 'B'):
         put('dd-switched.txt', sh('ps -o args= -C xfwm4') + ' xid %s' % xid)
 """
 
+# ---- dirtytrace: where does each DirtyFB (the X server's screen update) spend its time in the kernel? -------------
+DT_PROBE = r"""
+import os, time, subprocess, urllib.request
+H = 'http://10.0.2.2:8765/'
+def put(n, d):
+    if isinstance(d, str): d = d.encode()
+    urllib.request.urlopen(urllib.request.Request(H + n, data=d, method='POST'), timeout=30).read()
+def get(n): return urllib.request.urlopen(H + n, timeout=10).read()
+T = '/sys/kernel/tracing'
+if not os.path.exists(T + '/trace'):
+    subprocess.run('mount -t tracefs nodev ' + T, shell=True)
+def w(f, v, mode='w'):
+    try:
+        with open(T + '/' + f, mode) as fh: fh.write(v)
+        return 'ok'
+    except OSError as e: return str(e)
+info = []
+w('tracing_on', '0'); w('current_tracer', 'nop'); w('trace', ''); w('buffer_size_kb', '16384')
+info.append('tracer ' + w('current_tracer', 'function_graph'))
+for fn in ('drm_atomic_helper_dirtyfb', 'drm_atomic_commit', 'drm_atomic_helper_commit', 'drm_atomic_helper_setup_commit',
+           'drm_atomic_helper_wait_for_dependencies', 'drm_atomic_helper_commit_planes', 'drm_atomic_helper_commit_hw_done',
+           'drm_atomic_helper_wait_for_vblanks', 'drm_atomic_helper_wait_for_flip_done', 'drm_atomic_helper_fake_vblank',
+           'virtio_gpu_primary_plane_update', 'virtio_gpu_cmd_transfer_to_host_2d', 'virtio_gpu_cmd_resource_flush',
+           'virtio_gpu_notify', 'dma_fence_wait_timeout', 'virtio_gpu_crtc_atomic_flush', 'drm_crtc_arm_vblank_event',
+           'drm_crtc_send_vblank_event', 'drm_crtc_vblank_get', 'drm_crtc_vblank_put', 'drm_crtc_vblank_on',
+           'drm_crtc_vblank_off', 'drm_vblank_disable_and_save', 'bochs_primary_helper_atomic_update'):
+    info.append(fn + ' ' + w('set_ftrace_filter', fn + '\n', 'a'))
+w('trace_options', 'funcgraph-abstime'); w('trace_options', 'funcgraph-proc')
+for ev in ('drm/drm_vblank_event', 'drm/drm_vblank_event_queued', 'drm/drm_vblank_event_delivered'):
+    info.append(ev + ' ' + w('events/' + ev + '/enable', '1'))
+info.append(subprocess.run('uname -r; lsmod | grep -E "virtio_gpu|bochs|vmwgfx"; cat /sys/module/drm/parameters/vblankoffdelay; '
+                           'grep -aE "ShadowFB|async|dirty|Dirty" /home/*/.local/share/xorg/Xorg.0.log /var/log/Xorg.0.log 2>/dev/null | head',
+                           shell=True, capture_output=True, text=True).stdout)
+put('dt-ready.txt', '\n'.join(info))
+while get('go-T') != b'1': time.sleep(0.02)
+w('tracing_on', '1'); time.sleep(5.5); w('tracing_on', '0')
+put('dt-trace.txt', open(T + '/trace', 'rb').read())
+w('current_tracer', 'nop')
+"""
+
 GO = set()
 
 
@@ -470,7 +510,7 @@ def dd_server():
     class Hd(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             n = self.path.strip("/")
-            b = GUEST_PROBE.encode() if n == "p" else (b"1" if n in GO else b"0")
+            b = GUEST_PROBE.encode() if n == "p" else DT_PROBE.encode() if n == "t" else (b"1" if n in GO else b"0")
             self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers()
             self.wfile.write(b)
 
@@ -575,6 +615,23 @@ if os.environ.get("DEMO_PHASE", "").startswith("cadence"):
             th = threading.Thread(target=host_counter, args=(stop, ys, ts2), daemon=True); th.start()
             time.sleep(1.5); stop.set(); th.join(2)
             log(f"cadence {tag} idle: {len(ts2)} changes in 1.5 s")
+    sys.exit(0)
+if os.environ.get("DEMO_PHASE") == "dirtytrace":
+    dd_server()
+    log("dirtytrace; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    key("meta_l", "ret"); wait(3.5)
+    type_text("echo EsoTest-2026 | sudo -S setsid python3 -c \"import urllib.request as u;exec(u.urlopen('http://10.0.2.2:8765/t').read())\" > /tmp/dt.log 2>&1 &\n")
+    wait(1.0); key("meta_l", "down"); wait(1.5)
+    log(f"probe ready: {until('dt-ready.txt', 40)}")
+    g = find_title((900, 254))
+    move(*g, 0.4); wait(0.3)
+    GO.add("go-T"); wait(0.5)
+    btn(True); time.sleep(0.12)
+    path = [(-420, 60), (-200, 260), (300, 300), (430, 40), (150, -60), (-100, 0)]
+    glide([(g[0] + dx, g[1] + dy) for (dx, dy) in path], 4.0)
+    time.sleep(0.08); btn(False); log("drag end")
+    log(f"trace: {until('dt-trace.txt', 60)}")
     sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "dragdiag":
     import threading
