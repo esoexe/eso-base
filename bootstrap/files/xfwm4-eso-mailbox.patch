@@ -1,5 +1,5 @@
---- a/src/compositor.c	2026-10-17 10:36:17.372522785 +0000
-+++ b/src/compositor.c	2026-10-17 10:36:24.592522785 +0000
+--- a/src/compositor.c
++++ b/src/compositor.c
 @@ -115,7 +115,7 @@
  #endif /* TIMEOUT_REPAINT_MS */
  
@@ -42,7 +42,32 @@
  #ifdef HAVE_PRESENT_EXTENSION
  static void
  present_error (ScreenInfo *screen_info, int error_code)
-@@ -1939,9 +1965,13 @@
+@@ -1926,6 +1952,24 @@
+     screen_info->use_present = FALSE;
+ }
+ 
++/* ESO glued cursor: while a window is dragged, the hardware cursor is hidden and the compositor draws the cursor
++ * itself, in the same frame as the window and at the pointer position that produced that window position. The host
++ * (VirtualBox/VMware) or the GPU cursor plane can then never run ahead of the window: they move as one object. */
++static gboolean eso_glue_on = FALSE;
++static gint eso_glue_x = 0, eso_glue_y = 0;
++
++static gboolean
++eso_glue_enabled (void)
++{
++    static int v = -1;
++    if (v < 0)
++    {
++        const gchar *e = g_getenv ("ESO_XFWM_GLUE");
++        v = (e && e[0] == '0') ? 0 : 1;
++    }
++    return v;
++}
++
+ static void
+ present_flip (ScreenInfo *screen_info, XserverRegion region, gushort buffer)
+ {
+@@ -1939,9 +1983,13 @@
  
      display_info = screen_info->display_info;
      myDisplayErrorTrapPush (display_info);
@@ -57,7 +82,19 @@
                      PresentOptionNone, 0, 1, 0, NULL, 0);
      result = myDisplayErrorTrapPop (display_info);
  
-@@ -2705,12 +2735,24 @@
+@@ -2593,6 +2641,11 @@
+         }
+     }
+ 
++    if (eso_glue_on && !screen_info->zoomed && screen_info->cursorPicture)
++    {
++        paint_cursor (screen_info, region, paint_buffer);
++    }
++
+     TRACE ("copying data back to screen");
+ #ifdef HAVE_EPOXY
+     if (screen_info->use_glx)
+@@ -2705,12 +2758,24 @@
       * We do not paint the screen because we are waiting for
       * a pending present notification, do not cancel the callback yet...
       */
@@ -83,3 +120,133 @@
  
  #ifdef HAVE_EPOXY
      /*
+@@ -4170,7 +4235,15 @@
+     TRACE ("window 0x%lx", ev->window);
+ 
+     screen_info = myDisplayGetScreenFromRoot (display_info, ev->window);
+-    if (screen_info && screen_info->cursor_is_zoomed)
++    if (screen_info && eso_glue_on && !screen_info->zoomed)
++    {
++        expose_area (screen_info, &screen_info->cursorLocation, 1);
++        update_cursor (screen_info);
++        screen_info->cursorLocation.x = eso_glue_x - screen_info->cursorOffsetX;
++        screen_info->cursorLocation.y = eso_glue_y - screen_info->cursorOffsetY;
++        expose_area (screen_info, &screen_info->cursorLocation, 1);
++    }
++    else if (screen_info && screen_info->cursor_is_zoomed)
+     {
+         update_cursor (screen_info);
+     }
+@@ -4687,6 +4760,63 @@
+     }
+ #endif /* HAVE_COMPOSITOR */
+ }
++
++void
++compositorEsoGlueBegin (ScreenInfo *screen_info, int x_root, int y_root)
++{
++#ifdef HAVE_COMPOSITOR
++    if (eso_glue_on || !eso_glue_enabled () || !screen_info->compositor_active || screen_info->zoomed)
++    {
++        return;
++    }
++    update_cursor (screen_info);                       /* the image shown now (the move grab cursor) + hotspot */
++    if (!screen_info->cursorPicture)
++    {
++        return;
++    }
++    eso_glue_on = TRUE;
++    eso_glue_x = x_root;
++    eso_glue_y = y_root;
++    screen_info->cursorLocation.x = x_root - screen_info->cursorOffsetX;
++    screen_info->cursorLocation.y = y_root - screen_info->cursorOffsetY;
++    XFixesHideCursor (screen_info->display_info->dpy, screen_info->xroot);
++    expose_area (screen_info, &screen_info->cursorLocation, 1);
++#endif /* HAVE_COMPOSITOR */
++}
++
++void
++compositorEsoGlueMove (ScreenInfo *screen_info, int x_root, int y_root)
++{
++#ifdef HAVE_COMPOSITOR
++    if (!eso_glue_on || (x_root == eso_glue_x && y_root == eso_glue_y))
++    {
++        return;
++    }
++    expose_area (screen_info, &screen_info->cursorLocation, 1);
++    eso_glue_x = x_root;
++    eso_glue_y = y_root;
++    screen_info->cursorLocation.x = x_root - screen_info->cursorOffsetX;
++    screen_info->cursorLocation.y = y_root - screen_info->cursorOffsetY;
++    expose_area (screen_info, &screen_info->cursorLocation, 1);
++#endif /* HAVE_COMPOSITOR */
++}
++
++void
++compositorEsoGlueEnd (ScreenInfo *screen_info)
++{
++#ifdef HAVE_COMPOSITOR
++    if (!eso_glue_on)
++    {
++        return;
++    }
++    eso_glue_on = FALSE;
++    XFixesShowCursor (screen_info->display_info->dpy, screen_info->xroot);
++    if (screen_info->compositor_active)
++    {
++        expose_area (screen_info, &screen_info->cursorLocation, 1);
++    }
++#endif /* HAVE_COMPOSITOR */
++}
+ 
+ void
+ compositorInitDisplay (DisplayInfo *display_info)
+--- a/src/compositor.h
++++ b/src/compositor.h
+@@ -36,6 +36,9 @@
+ 
+ gboolean                 compositorIsUsable                     (DisplayInfo *);
+ gboolean                 compositorIsActive                     (ScreenInfo *);
++void                     compositorEsoGlueBegin                 (ScreenInfo *, int, int);
++void                     compositorEsoGlueMove                  (ScreenInfo *, int, int);
++void                     compositorEsoGlueEnd                   (ScreenInfo *);
+ void                     compositorAddWindow                    (DisplayInfo *,
+                                                                  Window,
+                                                                  Client *);
+--- a/src/moveresize.c
++++ b/src/moveresize.c
+@@ -1104,6 +1104,8 @@
+             clientConfigure (c, &wc, changes, passdata->configure_flags);
+             /* Configure applied, clear the flags */
+             passdata->configure_flags = NO_CFG_FLAG;
++            /* ESO: the drawn cursor goes to the pointer position this window position came from */
++            compositorEsoGlueMove (screen_info, event->motion.x_root, event->motion.y_root);
+         }
+     }
+     else if ((event->meta.xevent->type == UnmapNotify) && (event->meta.window == c->window))
+@@ -1246,11 +1248,17 @@
+     FLAG_UNSET (c->xfwm_flags, XFWM_FLAG_SAVED_POS);
+ 
+     FLAG_SET (c->xfwm_flags, XFWM_FLAG_MOVING_RESIZING);
++    /* ESO: a mouse drag draws the cursor in the window's frames (see compositorEsoGlueBegin) */
++    if (event && event->pressed && !screen_info->params->box_move)
++    {
++        compositorEsoGlueBegin (screen_info, event->x_root, event->y_root);
++    }
+     TRACE ("entering move loop");
+     eventFilterPush (display_info->xfilter, clientMoveEventFilter, &passdata);
+     gtk_main ();
+     eventFilterPop (display_info->xfilter);
+     TRACE ("leaving move loop");
++    compositorEsoGlueEnd (screen_info);
+     if (passdata.client_gone)
+     {
+         goto move_cleanup;
+@@ -1288,6 +1296,7 @@
+     }
+ 
+ move_cleanup:
++    compositorEsoGlueEnd (screen_info);
+     /* Put back the sidewalks as they ought to be */
+     placeSidewalks (screen_info, screen_info->params->wrap_workspaces);
+ 
