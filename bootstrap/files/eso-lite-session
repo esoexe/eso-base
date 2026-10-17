@@ -47,14 +47,15 @@ xset s off 2>/dev/null
 size0=$(screen_size)
 command -v eso-display >/dev/null 2>&1 && eso-display auto >/dev/null 2>&1 && export ESO_DISPLAY_DONE=1   # autostart: no 2nd run
 [ "$INTRO" = 1 ] && [ "$(screen_size)" != "$size0" ] && eso-rootpaint --zoom "$STILL" >/dev/null 2>&1
-# The ESO intro goes on from the boot animation's exact picture (same stars, planet, comet position) and dissolves
+# The ESO intro ("Ascension") goes on from the boot animation's exact picture (same halo, rays, spark) and dissolves
 # into the desktop once it is ready, so boot -> desktop is one continuous film with nothing popping up. It must
 # cover the screen BEFORE the wallpaper is painted, otherwise the bare wallpaper flashes in between.
 RUN="${XDG_RUNTIME_DIR:-/tmp}/eso"; mkdir -p "$RUN"; rm -f "$RUN/shell-ready" "$RUN/intro-mapped"
 if [ "${ESO_LOCK_AT_START:-0}" != 1 ] && command -v eso-intro >/dev/null 2>&1; then
     eso-intro >"$RUN/intro.log" 2>&1 &
-    # the still frame stays until the intro is on screen (a slow first boot can take a few seconds)
-    i=0; while [ $i -lt 160 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 $! 2>/dev/null; do sleep 0.05; i=$((i + 1)); done
+    INTRO_PID=$!
+    # 3.13.21: no waiting here - xfwm4 starts at once (its compositor then blends the intro from its first frame);
+    # the root keeps the intro's still frame meanwhile. Only the desktop's own windows wait for the intro (below).
 fi
 # With the intro, the X root keeps its still frame (the intro's own picture) until the desktop takes over: when
 # xfwm4's compositor starts, its first frame shows the root, so a wallpaper there flashed through the intro
@@ -79,7 +80,10 @@ if command -v eso-supertap >/dev/null 2>&1; then eso-supertap >/dev/null 2>&1 & 
 elif command -v xcape >/dev/null 2>&1; then xcape -t 300 -e 'Super_L=Control_L|Escape;Super_R=Control_L|Escape' >/dev/null 2>&1; fi
 # 3.13.14: autostart (and with it the desktop) right away; eso-autostart applies the gsettings theme itself in the
 # background (GTK on X11 reads settings.ini/XSETTINGS, not gsettings): it cost the first boot seconds before the shell
-( sleep 0.3; exec "$HOME/.local/bin/eso-autostart" ) &
+# The shell (taskbar, icons, first-run setup) maps only once the intro covers the screen (at most 3 s).
+( i=0; while [ -n "${INTRO_PID:-}" ] && [ $i -lt 60 ] && [ ! -e "$RUN/intro-mapped" ] && kill -0 "$INTRO_PID" 2>/dev/null; do
+      sleep 0.05; i=$((i + 1)); done
+  exec "$HOME/.local/bin/eso-autostart" ) &
 # xfwm4's built-in compositor: eso-perf writes its settings (on with the right vsync, or off when picom draws the
 # effects) BEFORE xfwm4 starts. --compositor=on only makes xfwm4 able to composite; use_compositing decides, and
 # eso-perf / game mode switch it live. A compositor means dragged windows never leave trails or tear.

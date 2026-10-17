@@ -41,6 +41,14 @@ chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
   { zstd -dc \$f 2>/dev/null || xz -dc \$f 2>/dev/null || gzip -dc \$f 2>/dev/null || cat \$f; } | cpio -id --quiet 2>/dev/null
   ok=1; for x in init bin/sh; do [ -e \$x ] || { echo \"initramfs is missing /\$x\"; ok=0; }; done
   echo \"initramfs: \$(find . | wc -l) files\"; cd /; rm -rf \$d; [ \$ok = 1 ]"
+# 3.13.21: the "after an update" work done once here, not on every live boot (~1 s before the desktop): hardware
+# database, library cache, journal catalog; then /etc and /var are marked up to date with /usr, so the
+# ConditionNeedsUpdate= units (systemd-hwdb-update, ldconfig, journal-catalog-update, ...) skip.
+chroot "$ESO" /usr/bin/env -i PATH=/usr/bin:/usr/sbin bash -c "
+  systemd-hwdb update --usr >/dev/null 2>&1 || udevadm hwdb --update --usr >/dev/null 2>&1 || true
+  rm -f /etc/udev/hwdb.bin; ldconfig; journalctl --update-catalog >/dev/null 2>&1 || true
+  touch /usr; sleep 1; rm -f /etc/.updated /var/.updated; touch /etc/.updated /var/.updated
+  echo \"needs-update marks: hwdb=\$(ls /usr/lib/udev/hwdb.bin 2>/dev/null || echo none)\""
 umnt
 cp "$ESO/boot/vmlinuz-$KV" "$W/iso/boot/vmlinuz"; cp "$ESO/boot/initrd.img-$KV" "$W/iso/boot/initrd.img"
 
