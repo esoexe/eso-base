@@ -260,7 +260,7 @@ if os.environ.get("DEMO_PHASE") == "bootdiag":
     log("boot diagnostics; waiting for the desktop")
     wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
     log(f"mice at the desktop: {mice()}")
-    SETUP_T = (900, 231)
+    SETUP_T = (900, 254)
     drag_window(SETUP_T, [(SETUP_T[0] - 300, SETUP_T[1] + 150), (SETUP_T[0] - 380, SETUP_T[1] + 200)], 1.5, "setup1")
     shot("80-after-first-drag")
     key("meta_l", "ret"); wait(3)
@@ -314,8 +314,8 @@ cx, cy = W // 2, H // 2
 wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
 shot("01-desktop")
 
-# window title bars, measured on the 1920x1080 desktop of ESO OS 3.13.6 (windows open centred)
-SETUP_T, FILES_T, SETTINGS_T, TERM_T = (900, 231), (900, 172), (850, 164), (800, 234)
+# window title bars, measured on the 1920x1080 desktop (setup: ESO OS 3.13.26; others 3.13.6; windows open centred)
+SETUP_T, FILES_T, SETTINGS_T, TERM_T = (900, 254), (900, 172), (850, 164), (800, 234)
 
 # 1. the setup window: drag it around smoothly (3.13.6: no trails), put it back, minimize it
 drag_window(SETUP_T, [(SETUP_T[0] + dx, SETUP_T[1] + dy) for (dx, dy) in
