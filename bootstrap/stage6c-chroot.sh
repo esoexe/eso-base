@@ -226,6 +226,10 @@ cd /
 # installs every file, records /var/lib/eso/pkgs/eso-desktop.{control,list} and runs its postinst (eso-deploy-system.sh)
 ESO_BASE_PKG=1 python3 "$D/usr/share/eso/src/lib/eso/esobasepkg.py" install-local "/sources/eso-desktop_${V_esodesktop}_all.deb" \
     > /tmp/deploy.log 2>&1 || { tail -40 /tmp/deploy.log; echo "FAILED: installing eso-desktop"; exit 1; }
+# the package deploys its own copy of the modesetting driver: it must be this stage's build (async + tear-free), not older
+cmp -s /usr/lib/xorg/modules/drivers/modesetting_drv.so /usr/share/eso-native/modesetting_drv.so \
+    || grep -qa ESO_DIRTY_NO_WAIT /usr/lib/xorg/modules/drivers/modesetting_drv.so \
+    || { echo "FAILED: eso-desktop $V_esodesktop carries an older modesetting driver (no tear-free dirty updates)"; exit 1; }
 rm -rf "$D"; tail -1 /tmp/deploy.log
 echo "  deployed: $(ls /usr/local/bin | wc -l) programs, $(ls /usr/local/lib/eso | wc -l) modules"
 # the session from eso-desktop 3.12.2: the wallpaper is painted first, so no black screen after the boot animation
