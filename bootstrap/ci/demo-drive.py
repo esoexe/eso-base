@@ -501,6 +501,75 @@ put('dt-trace.txt', open(T + '/trace', 'rb').read())
 w('current_tracer', 'nop')
 """
 
+
+WIN_PROBE = r"""
+import os, subprocess, urllib.request, ctypes, ctypes.util
+H = 'http://10.0.2.2:8765/'
+def put(name, data):
+    if isinstance(data, str): data = data.encode()
+    urllib.request.urlopen(urllib.request.Request(H + name, data=data, method='POST'), timeout=10).read()
+out = []
+try:
+    import gi; gi.require_version('Gdk', '3.0'); from gi.repository import Gdk
+    root = Gdk.get_default_root_window()
+    pb = Gdk.pixbuf_get_from_window(root, 568, 300, 794, 440)
+    put('wp-xgrab.png', pb.save_to_bufferv('png', [], [])[1])
+except Exception as e:
+    out.append('xgrab failed %r' % e)
+X = ctypes.CDLL(ctypes.util.find_library('X11'))
+V = ctypes.c_void_p; UL = ctypes.c_ulong
+X.XOpenDisplay.restype = V; X.XOpenDisplay.argtypes = [ctypes.c_char_p]
+X.XDefaultRootWindow.restype = UL; X.XDefaultRootWindow.argtypes = [V]
+X.XQueryTree.argtypes = [V, UL, ctypes.POINTER(UL), ctypes.POINTER(UL), ctypes.POINTER(ctypes.POINTER(UL)), ctypes.POINTER(ctypes.c_uint)]
+class WA(ctypes.Structure):
+    _fields_ = [('x', ctypes.c_int), ('y', ctypes.c_int), ('width', ctypes.c_int), ('height', ctypes.c_int),
+                ('border_width', ctypes.c_int), ('depth', ctypes.c_int), ('visual', V), ('root', UL), ('class_', ctypes.c_int),
+                ('bit_gravity', ctypes.c_int), ('win_gravity', ctypes.c_int), ('backing_store', ctypes.c_int),
+                ('backing_planes', UL), ('backing_pixel', UL), ('save_under', ctypes.c_int), ('colormap', UL),
+                ('map_installed', ctypes.c_int), ('map_state', ctypes.c_int), ('all_event_masks', ctypes.c_long),
+                ('your_event_mask', ctypes.c_long), ('do_not_propagate_mask', ctypes.c_long), ('override_redirect', ctypes.c_int),
+                ('screen', V)]
+X.XGetWindowAttributes.argtypes = [V, UL, ctypes.POINTER(WA)]
+X.XInternAtom.restype = UL; X.XInternAtom.argtypes = [V, ctypes.c_char_p, ctypes.c_int]
+X.XGetWindowProperty.argtypes = [V, UL, UL, ctypes.c_long, ctypes.c_long, ctypes.c_int, UL, ctypes.POINTER(UL),
+    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(UL), ctypes.POINTER(UL), ctypes.POINTER(V)]
+dp = X.XOpenDisplay(None); xr = X.XDefaultRootWindow(dp)
+def prop(w, name, kind):
+    at, fm, n, ba, pr = UL(), ctypes.c_int(), UL(), UL(), V()
+    X.XGetWindowProperty(dp, w, X.XInternAtom(dp, name, 0), 0, 1024, 0, 0, ctypes.byref(at), ctypes.byref(fm),
+                         ctypes.byref(n), ctypes.byref(ba), ctypes.byref(pr))
+    if not pr.value or not n.value: return None
+    if kind == 's': return ctypes.string_at(pr, n.value).replace(b'\0', b' ').decode('utf-8', 'replace')
+    return list(ctypes.cast(pr, ctypes.POINTER(UL))[:n.value])
+def kids(w):
+    r, p, c, n = UL(), UL(), ctypes.POINTER(UL)(), ctypes.c_uint()
+    X.XQueryTree(dp, w, ctypes.byref(r), ctypes.byref(p), ctypes.byref(c), ctypes.byref(n))
+    return [c[i] for i in range(n.value)]
+def who(w, depth=0):
+    cls = prop(w, b'WM_CLASS', 's'); pid = prop(w, b'_NET_WM_PID', 'c')
+    if cls or pid or depth > 2: return cls, pid
+    for k in kids(w):
+        c2, p2 = who(k, depth + 1)
+        if c2 or p2: return c2, p2
+    return None, None
+out.append('root bg pixmaps: _XROOTPMAP_ID %s ESETROOT_PMAP_ID %s' % (prop(xr, b'_XROOTPMAP_ID', 'c'), prop(xr, b'ESETROOT_PMAP_ID', 'c')))
+out.append('top-level windows, TOP first (mapped only); * = covers the screen centre')
+for w in reversed(kids(xr)):
+    a = WA(); X.XGetWindowAttributes(dp, w, ctypes.byref(a))
+    if a.map_state != 2: continue
+    c = a.x <= 960 < a.x + a.width and a.y <= 520 < a.y + a.height
+    cls, pid = who(w)
+    cmd = ''
+    if pid:
+        try: cmd = open('/proc/%d/cmdline' % pid[0], 'rb').read().replace(b'\0', b' ').decode()[:90]
+        except OSError: cmd = '(gone)'
+    out.append('%s 0x%x %dx%d+%d+%d depth %d OR %d class %s pid %s %s' % ('*' if c else ' ', w, a.width, a.height, a.x, a.y,
+               a.depth, a.override_redirect, cls, pid and pid[0], cmd))
+out.append(subprocess.run('ps -eo pid,etimes,args | grep -E "eso-|xfwm4|picom|plymouth|Xorg" | grep -v grep | cut -c1-140', shell=True, capture_output=True, text=True).stdout)
+out.append(subprocess.run('ls -la --time-style=+%T.%N $XDG_RUNTIME_DIR/eso/; cat $XDG_RUNTIME_DIR/eso/intro.log; cut -d" " -f1 /proc/uptime', shell=True, capture_output=True, text=True).stdout)
+put('wp-windows.txt', '\n'.join(out))
+"""
+
 GO = set()
 
 
@@ -510,7 +579,8 @@ def dd_server():
     class Hd(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             n = self.path.strip("/")
-            b = GUEST_PROBE.encode() if n == "p" else DT_PROBE.encode() if n == "t" else (b"1" if n in GO else b"0")
+            b = GUEST_PROBE.encode() if n == "p" else DT_PROBE.encode() if n == "t" else WIN_PROBE.encode() if n == "w" \
+                else (b"1" if n in GO else b"0")
             self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers()
             self.wfile.write(b)
 
@@ -632,6 +702,23 @@ if os.environ.get("DEMO_PHASE") == "dirtytrace":
     glide([(g[0] + dx, g[1] + dy) for (dx, dy) in path], 4.0)
     time.sleep(0.08); btn(False); log("drag end")
     log(f"trace: {until('dt-trace.txt', 60)}")
+    sys.exit(0)
+if os.environ.get("DEMO_PHASE") == "introdiag":
+    # 4.0.2: after the intro a planet stayed on the desktop (seen wherever a window uncovered it) until the Start menu
+    # opened. Which X window shows it, and is it in the X server's own picture or only on QEMU's screen?
+    import threading
+    dd_server()
+    log("intro diagnostics; waiting for the desktop")
+    wait(float(os.environ.get("DEMO_BOOT_WAIT", "38")))
+    shot("i1-desktop")
+    key("meta_l", "down"); wait(1.5)
+    shot("i2-setup-minimized")
+    key("meta_l", "ret"); wait(3.5)
+    type_text("(sleep 2.5; python3 -c \"import urllib.request as u;exec(u.urlopen('http://10.0.2.2:8765/w').read())\") > /tmp/w.log 2>&1 &\n", gap=0.03)
+    wait(0.5); key("meta_l", "down"); wait(1.0)
+    shot("i3-terminal-minimized")
+    log(f"window probe: {until('wp-windows.txt', 30)}")
+    shot("i4-after-probe")
     sys.exit(0)
 if os.environ.get("DEMO_PHASE") == "dragdiag":
     import threading
