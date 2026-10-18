@@ -213,6 +213,7 @@ install -D -m644 drivers/gpu/drm/virtio/virtio-gpu.ko "/usr/lib/modules/$KV/upda
 depmod -a "$KV"
 modinfo -k "$KV" -n virtio_gpu | grep -q /updates/ || { echo "FAILED: modprobe does not pick the ESO virtio-gpu"; exit 1; }
 modinfo -k "$KV" -p virtio_gpu | grep -q vblank_timer || { echo "FAILED: ESO virtio-gpu patch missing"; exit 1; }
+modinfo -k "$KV" -p virtio_gpu | grep -q dumb_fence || { echo "FAILED: ESO virtio-gpu dumb_fence missing"; exit 1; }
 eso-mkinitramfs "$KV" >/dev/null
 echo "  virtio-gpu (no simulated vblank) installed: $(modinfo -k "$KV" -n virtio_gpu)"; done_ linux
 

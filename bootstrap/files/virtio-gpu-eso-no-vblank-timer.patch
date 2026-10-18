@@ -1,5 +1,6 @@
---- a/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-17 23:51:36.608469467 +0000
-+++ b/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-17 23:51:43.920469467 +0000
+diff -ru a/drivers/gpu/drm/virtio/virtgpu_display.c b/drivers/gpu/drm/virtio/virtgpu_display.c
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-18 09:38:04.930942766 +0000
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c	2026-10-18 09:38:04.942942766 +0000
 @@ -25,6 +25,8 @@
   * OTHER DEALINGS IN THE SOFTWARE.
   */
@@ -59,3 +60,39 @@
  
  	drm_mode_config_reset(vgdev->ddev);
  	return 0;
+diff -ru a/drivers/gpu/drm/virtio/virtgpu_plane.c b/drivers/gpu/drm/virtio/virtgpu_plane.c
+--- a/drivers/gpu/drm/virtio/virtgpu_plane.c	2026-10-18 09:38:04.930942766 +0000
++++ b/drivers/gpu/drm/virtio/virtgpu_plane.c	2026-10-18 09:38:04.958942766 +0000
+@@ -23,6 +23,7 @@
+  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  */
+ 
++#include <linux/moduleparam.h>
+ #include <drm/drm_atomic_helper.h>
+ #include <drm/drm_damage_helper.h>
+ #include <drm/drm_fourcc.h>
+@@ -34,6 +35,10 @@
+ 
+ #include "virtgpu_drv.h"
+ 
++static bool virtio_gpu_dumb_fence = true;
++MODULE_PARM_DESC(dumb_fence, "Wait for the host to read a dumb framebuffer before a flush returns (default: on)");
++module_param_named(dumb_fence, virtio_gpu_dumb_fence, bool, 0400);
++
+ static const uint32_t virtio_gpu_formats[] = {
+ 	DRM_FORMAT_HOST_XRGB8888,
+ };
+@@ -366,7 +371,12 @@
+ 
+ 	drm_gem_plane_helper_prepare_fb(plane, new_state);
+ 
+-	if (!bo || (plane->type == DRM_PLANE_TYPE_PRIMARY && !bo->guest_blob))
++	/*
++	 * ESO: a dumb primary buffer gets a fence too, so the flush waits until the host has read the update. Without it
++	 * DIRTYFB returns before the host copies the buffer, and the X server may already be writing the next picture
++	 * into it: the host then shows a band of the window from one picture and the rest from the other (a tear).
++	 */
++	if (!bo || (plane->type == DRM_PLANE_TYPE_PRIMARY && !bo->guest_blob && !(bo->dumb && virtio_gpu_dumb_fence)))
+ 		return 0;
+ 
+ 	obj = new_state->fb->obj[0];

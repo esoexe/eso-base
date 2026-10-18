@@ -1,6 +1,6 @@
 --- a/hw/xfree86/drivers/modesetting/driver.c
 +++ b/hw/xfree86/drivers/modesetting/driver.c
-@@ -547,6 +547,167 @@
+@@ -547,6 +547,225 @@
      }
  }
  
@@ -18,7 +18,15 @@
 + * Where the kernel does not pace DIRTYFB at all (vmwgfx; ESO's virtio-gpu without the simulated vblank) the helper
 + * sends at most ESO_DIRTY_MAX_HZ (default 250) updates a second: every host refresh up to 240 Hz still gets a fresh
 + * picture, and a 1000 Hz mouse does not make the host copy the moving window 1000 times a second.
++ *
++ * No torn pictures: the host reads the framebuffer when it processes a send, after DIRTYFB has returned to the
++ * helper. On virtio-gpu (ESO's module fences dumb buffers: DIRTYFB returns once the host has read them) and vmwgfx the
++ * shadow copy into the framebuffer therefore waits while a send is in flight (a fraction of a millisecond, at most
++ * 20 ms) and the helper never starts a send while that copy runs: the host never shows a band of the window from one
++ * picture and the rest from the next. Drivers that pace DIRTYFB to a vblank skip the wait (it would bring the stall
++ * back). ESO_DIRTY_NO_WAIT=1 turns it off.
 + */
++#include <errno.h>
 +#include <pthread.h>
 +#include <signal.h>
 +#include <time.h>
@@ -37,8 +45,13 @@
 +    pthread_cond_t cond;
 +    int state;                       /* 0 = not started, 1 = running, -1 = unavailable (synchronous) */
 +    int fd;
++    int wait_ok;                     /* the shadow copy waits for sends in flight (virtio-gpu, vmwgfx) */
++    int inflight;                    /* the helper is inside DIRTYFB */
++    int writing;                     /* the main thread is copying into the framebuffer */
++    pthread_cond_t idle;
 +    struct eso_dirty_slot slot[ESO_DIRTY_SLOTS];
-+} eso_dirty = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, -1 };
++} eso_dirty = { .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER, .state = 0, .fd = -1,
++                .idle = PTHREAD_COND_INITIALIZER };
 +
 +static void
 +eso_dirty_send(int fd, uint32_t fb_id, drmModeClip *clip, unsigned n)
@@ -70,7 +83,7 @@
 +        have = 0;
 +        for (i = 0; i < ESO_DIRTY_SLOTS; i++)
 +            have |= eso_dirty.slot[i].n != 0;
-+        if (!have) {
++        if (!have || eso_dirty.writing) {
 +            pthread_cond_wait(&eso_dirty.cond, &eso_dirty.lock);
 +            continue;
 +        }
@@ -89,6 +102,7 @@
 +            }
 +        }
 +        last = now;
++        eso_dirty.inflight = 1;
 +        fd = eso_dirty.fd;
 +        for (i = 0; i < ESO_DIRTY_SLOTS; i++) {
 +            work[i] = eso_dirty.slot[i];
@@ -99,6 +113,8 @@
 +            if (work[i].n)
 +                eso_dirty_send(fd, work[i].fb_id, work[i].clips, work[i].n);
 +        pthread_mutex_lock(&eso_dirty.lock);
++        eso_dirty.inflight = 0;
++        pthread_cond_broadcast(&eso_dirty.idle);
 +    }
 +    return NULL;
 +}
@@ -117,6 +133,15 @@
 +        sigset_t all, old;
 +
 +        eso_dirty.state = -1;
++        {
++            drmVersionPtr v = drmGetVersion(fd);
++            const char *nw = getenv("ESO_DIRTY_NO_WAIT");
++
++            eso_dirty.wait_ok = v && v->name && (!strcmp(v->name, "virtio_gpu") || !strcmp(v->name, "vmwgfx")) &&
++                                !(nw && *nw && *nw != '0');
++            if (v)
++                drmFreeVersion(v);
++        }
 +        if (!(e && *e && *e != '0')) {
 +            sigfillset(&all);        /* the helper never takes the server's signals */
 +            pthread_sigmask(SIG_BLOCK, &all, &old);
@@ -165,10 +190,43 @@
 +    return TRUE;
 +}
 +
++/* the main thread is about to copy into the framebuffer: let a send in flight finish, hold the next one back */
++static void
++eso_dirty_begin_write(void)
++{
++    struct timespec dl;
++
++    if (eso_dirty.state != 1 || !eso_dirty.wait_ok)
++        return;
++    pthread_mutex_lock(&eso_dirty.lock);
++    clock_gettime(CLOCK_REALTIME, &dl);
++    dl.tv_nsec += 20000000;
++    if (dl.tv_nsec >= 1000000000L) {
++        dl.tv_sec++;
++        dl.tv_nsec -= 1000000000L;
++    }
++    while (eso_dirty.inflight)
++        if (pthread_cond_timedwait(&eso_dirty.idle, &eso_dirty.lock, &dl) == ETIMEDOUT)
++            break;
++    eso_dirty.writing = 1;
++    pthread_mutex_unlock(&eso_dirty.lock);
++}
++
++static void
++eso_dirty_end_write(void)
++{
++    if (!eso_dirty.writing)
++        return;
++    pthread_mutex_lock(&eso_dirty.lock);
++    eso_dirty.writing = 0;
++    pthread_cond_signal(&eso_dirty.cond);
++    pthread_mutex_unlock(&eso_dirty.lock);
++}
++
  static int
  dispatch_dirty_region(ScrnInfoPtr scrn, xf86CrtcPtr crtc,
  		      PixmapPtr pixmap, DamagePtr damage, int fb_id)
-@@ -568,6 +729,13 @@
+@@ -568,6 +787,13 @@
          for (i = 0; i < num_cliprects; i++, rect++)
  	    rotate_clip(pixmap, rect, &clip[i], crtc->rotation);
  
@@ -182,3 +240,19 @@
          /* TODO query connector property to see if this is needed */
          ret = drmModeDirtyFB(ms->fd, fb_id, clip, num_cliprects);
  
+@@ -1391,6 +1617,7 @@
+     modesettingPtr ms = modesettingPTR(pScrn);
+     Bool use_3224 = ms->drmmode.force_24_32 && pScrn->bitsPerPixel == 32;
+ 
++    eso_dirty_begin_write();
+     if (ms->drmmode.shadow_enable2 && ms->drmmode.shadow_fb2) do {
+         RegionPtr damage = DamageRegion(pBuf->pDamage), tiles;
+         BoxPtr extents = RegionExtents(damage);
+@@ -1435,6 +1662,7 @@
+         ms->shadow.Update32to24(pScreen, pBuf);
+     else
+         ms->shadow.UpdatePacked(pScreen, pBuf);
++    eso_dirty_end_write();
+ }
+ 
+ static Bool
